@@ -4,3 +4,4 @@ grpcio-tools
 pymongo
 requests
 python-dotenv
+confluent-kafka

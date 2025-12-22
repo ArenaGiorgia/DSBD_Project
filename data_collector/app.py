@@ -10,6 +10,8 @@ import user_pb2
 import user_pb2_grpc
 from concurrent import futures
 from database_mongo import mongo_db
+from circuit_breaker import CircuitBreaker, CircuitBreakerOpenException
+from confluent_kafka import Producer
 
 app = Flask(__name__)
 
@@ -18,7 +20,31 @@ MY_CLIENT_ID = "data_collector_service"
 OPENSKY_CLIENT_ID = os.getenv("OPENSKY_CLIENT_ID")
 OPENSKY_CLIENT_SECRET = os.getenv("OPENSKY_CLIENT_SECRET")
 AUTH_URL = "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token"
+KAFKA_BOOTSTRAP_SERVERS = 'kafka:9092'
 
+
+# Se fallisce 4 volte di fila la chiamata, smette di chiamare OpenSky per 60 secondi.
+opensky_breaker = CircuitBreaker(failure_threshold=4, recovery_timeout=60,
+                                 expected_exception=requests.exceptions.RequestException)
+
+
+producer_config = {
+    'bootstrap.servers': KAFKA_BOOTSTRAP_SERVERS,
+    'acks': 'all',    #vediamo ora se modificarlo con 1 o all
+    'batch.size': 500,  #come quello del professore
+    'max.in.flight.requests.per.connection': 1, #per avere maggiore robustezza
+    'retries': 3,
+    'linger.ms': 10
+}
+
+try:
+    producer = Producer(producer_config)
+    print("kafka Producer inizializzato correttamente")
+except Exception as e:
+    print(f"Errore inizializzazione Kafka: {e}")
+    producer = None
+
+TOPIC_1 = 'to-alert-system'
 
 # server gRPC che diventa il DATA-COLLECTOR in caso di eliminazione degli utenti con interessi
 class DataCollectorGRPC(user_pb2_grpc.DataCollectorServicer):
@@ -67,6 +93,20 @@ def get_opensky_token():
         print(f"[OpenSky Auth Exception] {e}")
         return None
 
+#funzione che permette il funzionamento del circuit breaker
+def circuit_breaker_request(url, params, headers):
+    print(f"Eseguo la chiamata verso {url}")
+    resp = requests.get(url, params=params, headers=headers, timeout=10)
+    resp.raise_for_status() # Solleva eccezione se lo stato è diverso da 200
+    return resp.json()
+
+#
+def delivery_report(err, msg):
+
+    if err:
+        print(f"Consegna fallita: {err}")
+    else:
+        print(f"consegna consegnata a: {msg.topic()} [{msg.partition()}] con offset: {msg.offset()}")
 
 def fetch_opensky_data(airport):
     ora_fine = int(time.time())
@@ -75,30 +115,33 @@ def fetch_opensky_data(airport):
     ora_inizio = ora_fine - 7200
 
     url = "https://opensky-network.org/api/flights/departure"
+    #url = "https://sito-fake.com/api"  #l ho messo per testare il circuit breaker
+
     params = {'airport': airport, 'begin': ora_inizio, 'end': ora_fine}
     token = get_opensky_token()
     headers = {}
     if token:
         headers["Authorization"] = f"Bearer {token}"
-        print(f"Token ottenuto, eseguo richiesta autenticata per {airport}...")
-    else:
-        print(f"Token non disponibile, eseguo richiesta anonima per {airport}...")
 
     try:
-        # Passiamo 'headers' invece di 'auth'
-        r = requests.get(url, params=params, headers=headers, timeout=10)
-
-        if r.status_code == 200:
-            dati = r.json()
-            if dati:
-                return dati
-            else:
-                print(f"Nessun volo trovato per {airport} nel periodo richiesto.")
+        # Usiamo il breaker qui
+        dati = opensky_breaker.call(circuit_breaker_request, url, params, headers)
+        if dati:
+            return dati
         else:
-            print(f"Status {r.status_code}: {r.text}")
+            print(f"Nessun volo trovato per {airport} (Lista vuota da API).")
+            return []  #Ritorna lista vuota se l'API risponde vuoto
+
+    except CircuitBreakerOpenException:
+        print(f"Circuito APERTO per {airport}.Richiesta bloccata.") # Se il circuito è aperto,passiamo direttamente ai dati MOCK
+
+
+    except requests.exceptions.RequestException as e:
+        print(f"Richiesta fallita: {e}")
+
 
     except Exception as e:
-        print(f"[OpenSky Exception] {e}")
+        print(f"[OpenSky Generic Error] {e}")
 
     # solo per scopi dimostrativi
     print(f"Generazione dati MOCK per {airport}")
@@ -131,6 +174,35 @@ def monitoraggio_ciclico():
                     voli = fetch_opensky_data(airport)
                     mongo_db.salva_voli(airport, voli)
                     print(f"Dati aggiornati per {airport}")
+
+                    if producer and voli:
+                        # l'Alert System dovrà leggere "utente, aeroporto, soglia".
+                        # Per ora mandiamo i dati grezzi dei voli o un riassunto.
+                        # Mandiamo un pacchetto JSON.
+
+                        messaggio_kafka = {
+                            "airport": airport,
+                            "timestamp": int(time.time()),
+                            "flights_count": len(voli),
+                            "flights_data": voli  # Mandiamo i dati completi così l'Alert System può analizzarli
+                        }
+
+                        try:
+
+                            producer.produce(
+                                TOPIC_1,
+                                json.dumps(messaggio_kafka).encode('utf-8'),
+                                callback=delivery_report
+                            )
+
+                            producer.poll(0)
+
+                        except Exception as e:
+                            print(f"[KAFKA SEND ERROR] {e}")
+
+                    # Fuori dal for, facciamo un flush per essere sicuri che parta tutto prima di dormire
+                    if producer:
+                          producer.flush()
 
             # Attesa ciclo (es. 10 minuti)
             time.sleep(600)
@@ -293,5 +365,5 @@ if __name__ == '__main__':
     grpc_thread = threading.Thread(target=start_grpc_server, daemon=True)
     grpc_thread.start()
 
-    print("Data Collector attivo sulla porta 5001 per FLASK e 5002 per il canale grpc")
+    print("Data Collector attivo sulla porta 5001 per FLASK e 50052 per il canale grpc")
     app.run(host='0.0.0.0', port=5001, debug=False)
