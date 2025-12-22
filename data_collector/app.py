@@ -217,6 +217,12 @@ def add_interest():
     data = request.json
     email = data.get('email')
     airport = data.get('airport')
+    high_value = data.get('high_value')
+    low_value = data.get('low_value')
+
+    if high_value is not None and low_value is not None:
+        if int(high_value) <= int(low_value):
+            return jsonify({"errore": "high_value deve essere maggiore di low_value"}), 400
 
     if not email or not airport:
         return jsonify({"errore": "Email e Airport obbligatori"}), 400
@@ -267,15 +273,17 @@ def add_interest():
 
         return jsonify({"errore": f"Errore comunicazione gRPC: {e.details()}"}), 500
 
-    # 2. Aggiunge l'interesse nel Data DB
-    mongo_db.aggiungi_interesse(email, airport)
+    # 2. Aggiunge l'interesse nel Data DB mettendo ora i nuovi parametri high_value e low_value
+    mongo_db.aggiungi_interesse(email, airport, high_value, low_value)
 
     # 3. Download IMMEDIATO
     print(f"Download immediato dati per {airport}...")
     voli = fetch_opensky_data(airport)
     mongo_db.salva_voli(airport, voli)
 
-    return jsonify({"messaggio": f"Interesse aggiunto e dati iniziali recuperati per {airport}"}), 200
+    return jsonify({"messaggio": f"Interesse aggiunto e dati iniziali recuperati per {airport}",
+    "thresholds": {"high": high_value, "low": low_value}}
+                   ), 200
 
 
 @app.route('/interests', methods=['DELETE'])

@@ -7,7 +7,7 @@ COPY requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copia tutto il codice(cache.py, db_postgres.py, ecc)
+
 COPY . .
 
 #Espone le due porte: 5000 (Flask/Postman) e 50051 (gRPC)
