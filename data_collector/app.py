@@ -21,18 +21,17 @@ OPENSKY_CLIENT_ID = os.getenv("OPENSKY_CLIENT_ID")
 OPENSKY_CLIENT_SECRET = os.getenv("OPENSKY_CLIENT_SECRET")
 AUTH_URL = "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token"
 KAFKA_BOOTSTRAP_SERVERS = 'kafka:9092'
-
+TOPIC_1 = 'to-alert-system'
 
 # Se fallisce 4 volte di fila la chiamata, smette di chiamare OpenSky per 60 secondi.
 opensky_breaker = CircuitBreaker(failure_threshold=4, recovery_timeout=60,
                                  expected_exception=requests.exceptions.RequestException)
 
-
 producer_config = {
     'bootstrap.servers': KAFKA_BOOTSTRAP_SERVERS,
-    'acks': 'all',    #vediamo ora se modificarlo con 1 o all
-    'batch.size': 500,  #come quello del professore
-    'max.in.flight.requests.per.connection': 1, #per avere maggiore robustezza
+    'acks': 'all',  #Aspetta che tutti i broker (eventualmente replicati) abbiano ottenuto il dato
+    'batch.size': 500,  
+    'max.in.flight.requests.per.connection': 1,  #per avere maggiore robustezza (voglio l ack dopo 1 mess)
     'retries': 3,
     'linger.ms': 10
 }
@@ -44,7 +43,6 @@ except Exception as e:
     print(f"Errore inizializzazione Kafka: {e}")
     producer = None
 
-TOPIC_1 = 'to-alert-system'
 
 # server gRPC che diventa il DATA-COLLECTOR in caso di eliminazione degli utenti con interessi
 class DataCollectorGRPC(user_pb2_grpc.DataCollectorServicer):
@@ -81,7 +79,7 @@ def get_opensky_token():
     }
 
     try:
-        # Facciamo una POST all'URL di autenticazione di OPENSKY
+        #Facciamo una POST all'URL di autenticazione di OPENSKY
         r = requests.post(AUTH_URL, data=payload, timeout=5)
         if r.status_code == 200:
             token = r.json().get("access_token")
@@ -93,20 +91,22 @@ def get_opensky_token():
         print(f"[OpenSky Auth Exception] {e}")
         return None
 
-#funzione che permette il funzionamento del circuit breaker
+
+# funzione che permette il funzionamento del circuit breaker
 def circuit_breaker_request(url, params, headers):
     print(f"Eseguo la chiamata verso {url}")
     resp = requests.get(url, params=params, headers=headers, timeout=10)
-    resp.raise_for_status() # Solleva eccezione se lo stato è diverso da 200
+    resp.raise_for_status()  # Solleva eccezione se lo stato è diverso da 200
     return resp.json()
+
 
 #
 def delivery_report(err, msg):
-
     if err:
         print(f"Consegna fallita: {err}")
     else:
         print(f"consegna consegnata a: {msg.topic()} [{msg.partition()}] con offset: {msg.offset()}")
+
 
 def fetch_opensky_data(airport):
     ora_fine = int(time.time())
@@ -124,16 +124,17 @@ def fetch_opensky_data(airport):
         headers["Authorization"] = f"Bearer {token}"
 
     try:
-        # Usiamo il breaker qui
+       
         dati = opensky_breaker.call(circuit_breaker_request, url, params, headers)
         if dati:
             return dati
         else:
             print(f"Nessun volo trovato per {airport} (Lista vuota da API).")
-            return []  #Ritorna lista vuota se l'API risponde vuoto
+            return []  # Ritorna lista vuota se l'API risponde vuoto
 
     except CircuitBreakerOpenException:
-        print(f"Circuito APERTO per {airport}.Richiesta bloccata.") # Se il circuito è aperto,passiamo direttamente ai dati MOCK
+        #Se il circuito è aperto,passiamo direttamente ai dati MOCK
+        print(f"Circuito APERTO per {airport}.Richiesta bloccata.")  
 
 
     except requests.exceptions.RequestException as e:
@@ -161,8 +162,31 @@ def fetch_opensky_data(airport):
     }]
     return mock_flight
 
+#inviamo dati sia nel loop di monitoraggio e sia dalla Rest API di opensky quando chiediamo i voli interessati
+def send_message_kafka(airport, voli):
+    if producer and voli:
 
-# task in background
+        messaggio_kafka = {
+            "airport": airport,
+            "timestamp": int(time.time()),
+            "flights_count": len(voli),
+            "flights_data": voli
+        }
+
+        try:
+            producer.produce(
+                TOPIC_1,
+                json.dumps(messaggio_kafka).encode('utf-8'),
+                callback=delivery_report
+            )
+            # Poll rapido per gestire i callback
+            producer.poll(0)
+            producer.flush()
+        except Exception as e:
+            print(f"Kafka error {e}")
+
+
+#task in background
 def monitoraggio_ciclico():
     print("Avvio Thread Monitoraggio Ciclico...")
     while True:
@@ -175,36 +199,10 @@ def monitoraggio_ciclico():
                     mongo_db.salva_voli(airport, voli)
                     print(f"Dati aggiornati per {airport}")
 
-                    if producer and voli:
-                        # l'Alert System dovrà leggere "utente, aeroporto, soglia".
-                        # Per ora mandiamo i dati grezzi dei voli o un riassunto.
-                        # Mandiamo un pacchetto JSON.
+                    #manda messaggi a kafka ogni 10 minuti
+                    send_message_kafka(airport, voli)
 
-                        messaggio_kafka = {
-                            "airport": airport,
-                            "timestamp": int(time.time()),
-                            "flights_count": len(voli),
-                            "flights_data": voli  # Mandiamo i dati completi così l'Alert System può analizzarli
-                        }
-
-                        try:
-
-                            producer.produce(
-                                TOPIC_1,
-                                json.dumps(messaggio_kafka).encode('utf-8'),
-                                callback=delivery_report
-                            )
-
-                            producer.poll(0)
-
-                        except Exception as e:
-                            print(f"[KAFKA SEND ERROR] {e}")
-
-                    # Fuori dal for, facciamo un flush per essere sicuri che parta tutto prima di dormire
-                    if producer:
-                          producer.flush()
-
-            # Attesa ciclo (es. 10 minuti)
+            #10 minuti
             time.sleep(600)
         except Exception as e:
             print(f"[BACKGROUND ERROR] {e}")
@@ -227,28 +225,27 @@ def add_interest():
     if not email or not airport:
         return jsonify({"errore": "Email e Airport obbligatori"}), 400
 
-    # 1. Verifica Utente via gRPC
+    #Verifica Utente via gRPC
     messaggio_univoco = str(uuid.uuid4())
     try:
-        #Configuro il canale per riprovare se il server è giù
+        # Configuro il canale per riprovare se il server è giù
         service_config = {
             "methodConfig": [
                 {
                     "name": [{"service": "UserManager"}],
-                    "timeout": "5s",                            #timeout totale
+                    "timeout": "5s",  # timeout totale
                     "retryPolicy": {
-                        "maxAttempts": 5,                       #Riprovare massimo 5 volte
-                        "initialBackoff": "0.5s",               #Aspetta 0.5s al primo errore
-                        "maxBackoff": "2s",                     #massima attesa
-                        "backoffMultiplier": 2,                 #Raddoppia l'attesa ogni volta
-                        "retryableStatusCodes": ["UNAVAILABLE"] #Riprova solo se il server è irraggiungibile
+                        "maxAttempts": 5,  # Riprovare massimo 5 volte
+                        "initialBackoff": "0.5s",  # Aspetta 0.5s al primo errore
+                        "maxBackoff": "2s",  # massima attesa
+                        "backoffMultiplier": 2,  # Raddoppia l'attesa ogni volta
+                        "retryableStatusCodes": ["UNAVAILABLE"]  # Riprova solo se il server è irraggiungibile
                     }
                 }
             ]
         }
 
-        options = [('grpc.service_config', json.dumps(service_config))] #mettere json.dumps se no da errore
-
+        options = [('grpc.service_config', json.dumps(service_config))]  #mettere json.dumps se no da errore
 
         with grpc.insecure_channel(USER_MANAGER_ADDRESS, options=options) as channel:
             stub = user_pb2_grpc.UserManagerStub(channel)
@@ -273,16 +270,19 @@ def add_interest():
 
         return jsonify({"errore": f"Errore comunicazione gRPC: {e.details()}"}), 500
 
-    # 2. Aggiunge l'interesse nel Data DB mettendo ora i nuovi parametri high_value e low_value
+
     mongo_db.aggiungi_interesse(email, airport, high_value, low_value)
 
-    # 3. Download IMMEDIATO
+
     print(f"Download immediato dati per {airport}...")
     voli = fetch_opensky_data(airport)
     mongo_db.salva_voli(airport, voli)
 
+    #mando il messaggio a kafka appena ho i voli di interesse
+    send_message_kafka(airport, voli)
+
     return jsonify({"messaggio": f"Interesse aggiunto e dati iniziali recuperati per {airport}",
-    "thresholds": {"high": high_value, "low": low_value}}
+                    "thresholds": {"high": high_value, "low": low_value}}
                    ), 200
 
 
@@ -373,5 +373,5 @@ if __name__ == '__main__':
     grpc_thread = threading.Thread(target=start_grpc_server, daemon=True)
     grpc_thread.start()
 
-    print("Data Collector attivo sulla porta 5001 per FLASK e 50052 per il canale grpc")
+    print("Data Collector attivo filtrato con il proxy NGINX")
     app.run(host='0.0.0.0', port=5001, debug=False)

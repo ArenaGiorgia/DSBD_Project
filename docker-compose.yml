@@ -13,6 +13,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+
   #Database dei dati tramite MongoDB
   data-db:
     image: mongo:6.0
@@ -22,6 +23,7 @@ services:
     volumes:
       - mongo_data:/data/db
 
+
   user-manager:
     build: ./user_manager
     container_name: user_manager_service
@@ -30,8 +32,10 @@ services:
       - "50051"
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@user-db:5432/${POSTGRES_DB}
+      - PYTHONUNBUFFERED=1
     depends_on:
       - user-db
+
 
   data-collector:
     build: ./data_collector
@@ -44,9 +48,12 @@ services:
       - USER_MANAGER_GRPC=user-manager:50051
       - OPENSKY_CLIENT_ID=${OPENSKY_CLIENT_ID}
       - OPENSKY_CLIENT_SECRET=${OPENSKY_CLIENT_SECRET}
+      - KAFKA_BOOTSTRAP_SERVERS=kafkabasic_kafka_1:9092
+      - PYTHONUNBUFFERED=1
     depends_on:
       - data-db
       - user-manager
+
 
   nginx:
     image: nginx:latest
@@ -86,20 +93,33 @@ services:
       KAFKA_LOG_DIRS: /var/lib/kafka/data
     volumes:
       - kafka-data:/var/lib/kafka/data
+
+
   alert-system:
     build: ./alert_system
     container_name: alert_system_service
     environment:
       - MONGO_URL=mongodb://data-db:27017/
+      - KAFKA_BOOTSTRAP_SERVERS=kafkabasic_kafka_1:9092
+      - PYTHONUNBUFFERED=1
     depends_on:
       - kafka
       - data-db
+
+
   notifier:
     build: ./notifier
     container_name: notifier_service
     depends_on:
       - kafka
       - alert-system
+    environment:
+      - SENDER_EMAIL=${GMAIL_USER}
+      - SENDER_PASSWORD=${GMAIL_PASSWORD}
+      - KAFKA_BOOTSTRAP_SERVERS=kafkabasic_kafka_1:9092
+      - PYTHONUNBUFFERED=1
+
+
 volumes:
   postgres_data:
   mongo_data:

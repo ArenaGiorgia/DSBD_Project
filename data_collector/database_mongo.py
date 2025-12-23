@@ -29,7 +29,7 @@ class MongoDB:
                 tentativi -= 1
         print("Impossibile connettersi con MONGO.")
 
-#aggiunti i valori hig_value e low_value al database
+    #aggiunti i valori hig_value e low_value al database
     def aggiungi_interesse(self, email, aeroporto, high_value=None, low_value=None ):
 
         if self.db is None: return False
@@ -37,20 +37,19 @@ class MongoDB:
         # update_one' con upsert=True per evitare duplicati
         self.db.interests.update_one(
             {"user": email, "airport": aeroporto},
-            {"$set": {"user": email, "airport": aeroporto},
-             "high_value": int(high_value) if high_value is not None else None,
-             "low_value": int(low_value) if low_value is not None else None
-              },
-
+            {"$set": {
+                "user": email,
+                "airport": aeroporto,
+                "high_value": int(high_value) if high_value is not None else None,
+                "low_value": int(low_value) if low_value is not None else None
+            }},
             upsert=True
         )
         return True
 
     def get_utenti_interessati(self, airport):
-        """
-        Restituisce la lista di utenti (e le loro soglie) interessati a un dato aeroporto.
-        Serve all'Alert System.
-        """
+
+        #serve all'alert syestm per restiutire gli interessati con le soglie di un dato aeroporto
         return list(self.db.interests.find({"airport": airport}))
 
 
