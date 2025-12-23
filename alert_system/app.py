@@ -41,7 +41,7 @@ def wait_for_kafka():
     configurazione_temp = {'bootstrap.servers': KAFKA_BOOTSTRAP_SERVERS}
     while True:
         try:
-            # Proviamo a chiedere la lista dei topic per vedere se è vivo
+            #Proviamo a chiedere la lista dei topic per vedere se è vivo
             producer_temp = Producer(configurazione_temp)
             producer_temp.list_topics(timeout=5.0)
             print("Kafka è PRONTO! Connessione stabilita")
@@ -95,10 +95,10 @@ def check_thresholds_and_alert(flight_data):
         triggered_threshold = None
 
         if high is not None and current_count > high:
-            condition = "HIGH_VALUE_EXCEEDED"
+            condition = "Valore ALTO superato"
             triggered_threshold = high
         elif low is not None and current_count < low:
-            condition = "LOW_VALUE_EXCEEDED"
+            condition = "Valore BASSO superato"
             triggered_threshold = low
 
         if condition:
@@ -114,6 +114,8 @@ def check_thresholds_and_alert(flight_data):
                 "timestamp": int(time.time())
             }
 
+            print(f"Allarme rilevato per {email}: {condition}")
+
             # Invio al Notifier
             producer.produce(
                 TOPIC_2,
@@ -122,10 +124,8 @@ def check_thresholds_and_alert(flight_data):
             )
             alerts_generated += 1
 
-    # ROBUSTEZZA STEP 1:
+
     # Se abbiamo generato allarmi, forziamo l'invio fisico
-    # Se il producer fallisce qui, il codice si ferma o lancia eccezione,
-    # quindi NON committeremo l'offset di lettura. Il messaggio verrà riletto. Corretto.
     if alerts_generated > 0:
         producer.flush()
 
@@ -175,6 +175,7 @@ def main():
             try:
 
                 data = json.loads(msg.value().decode('utf-8'))
+                print(f"Ricevuto da Kafka: {data.get('airport')} - Voli: {data.get('flights_count')}")
                 check_thresholds_and_alert(data)
 
                 #commit sincrono, kafka deve salvare l offeset se no lo blocchiamo

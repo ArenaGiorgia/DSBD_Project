@@ -59,12 +59,16 @@ def send_email(alert_data):
     msg['To'] = email
     msg['Subject'] = f"Allerta Voli: {airport}"
 
-    body = f"""
-    Ciao,{email}, Il sistema di monitoraggio ha rilevato una condizione critica per l'aeroporto: {airport}.
-    La condizione è settata a: {condition}. 
-    Il valore attuale dei voli è: {val}. 
-    La soglia che è stata impostata è: {threshold}.
-    Ti auguriamo buone vacanze e buon anno sperando di superare l'esame Distributed System 2025/2026"""
+    body = f"""Ciao {email},
+
+Il sistema di monitoraggio ha rilevato una condizione critica per l'aeroporto: {airport}.
+
+- Condizione: {condition}
+- Valore Attuale Voli: {val}
+- Soglia Impostata: {threshold}
+
+Ti auguriamo buone vacanze e un grande in bocca al lupo per l'esame di Distributed Systems!
+    """
 
     msg.attach(MIMEText(body, 'plain'))
 
