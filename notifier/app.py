@@ -104,7 +104,7 @@ def main():
 
     consumer = Consumer(consumer_conf)
     consumer.subscribe([TOPIC_1])
-    print(">>> Consumer Notifier connesso e sottoscritto al topic.")
+    print("Il consumer Notifier è connesso e sottoscritto al topic.")
 
     try:
         while True:
