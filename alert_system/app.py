@@ -179,8 +179,6 @@ def main():
                 check_thresholds_and_alert(data)
 
                 #commit sincrono, kafka deve salvare l offeset se no lo blocchiamo
-                #se muore il consumer l'offset non è salvato
-                # Al riavvio rileggeremo il messaggio -> Genereremo lo stesso Alert ID -> Il Notifier lo scarterà.
                 consumer.commit(message=msg, asynchronous=False)
 
             except Exception as e:
