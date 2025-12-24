@@ -7,8 +7,8 @@ from confluent_kafka import Consumer, Producer, KafkaError, KafkaException
 
 MONGO_URL = os.getenv("MONGO_URL", "mongodb://data-db:27017/")
 KAFKA_BOOTSTRAP_SERVERS = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'kafka:9092')
-TOPIC_1 = 'to-alert-system'
-TOPIC_2 = 'to-notifier'
+TOPIC_1 = 'to-alert-system' #da consumare l'alert systerm prodotto dal datacollector
+TOPIC_2 = 'to-notifier'     #da produrre l'alert system e consumarlo il notifier
 
 #Variabili globali inizializzate a None per il main
 db = None

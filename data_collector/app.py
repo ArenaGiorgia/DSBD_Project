@@ -214,7 +214,7 @@ def send_message_kafka(airport, voli,source_type=None):
             print(f"Kafka error {e}")
     else:
         if not current_producer:
-            print("⚠️ IMPOSSIBILE INVIARE A KAFKA: Producer non connesso.")
+            print("Producer non connesso.")
 
 
 # task in background
@@ -231,7 +231,7 @@ def monitoraggio_ciclico():
                     print(f"Dati aggiornati per {airport}")
 
                     # manda messaggi a kafka ogni 10 minuti
-                    send_message_kafka(airport, voli,source_type="Monitoraggio ciclico")
+                    send_message_kafka(airport, voli,source_type="Aggiornamento voli")
 
             # 10 minuti
             time.sleep(600)
