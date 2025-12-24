@@ -72,6 +72,7 @@ def check_thresholds_and_alert(flight_data):
     #Usiamo il timestamp scritto dal Data Collector.
     # Se il Data Collector non lo manda, usiamo 0 (o gestiamo l'errore), ma NON time.time().
     source_timestamp = flight_data.get('timestamp')
+    data_source = flight_data.get('source', 'Sconosciuta')
 
     if source_timestamp is None:
         print("errore: Timestamp mancante nei dati di volo!")
@@ -111,7 +112,8 @@ def check_thresholds_and_alert(flight_data):
                 "condition": condition,
                 "current_value": current_count,
                 "threshold": triggered_threshold,
-                "timestamp": int(time.time())
+                "timestamp": int(time.time()),
+                "source": data_source
             }
 
             print(f"Allarme rilevato per {email}: {condition}")

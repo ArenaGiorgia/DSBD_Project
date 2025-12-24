@@ -49,6 +49,7 @@ def send_email(alert_data):
     condition = alert_data.get('condition')
     val = alert_data.get('current_value')
     threshold = alert_data.get('threshold')
+    orig = alert_data.get('source', 'Non specificata')
 
     if not SENDER_EMAIL or not SENDER_PASSWORD:
         print("Credenziali email mancanti.", file=sys.stderr)
@@ -63,6 +64,7 @@ def send_email(alert_data):
 
 Il sistema di monitoraggio ha rilevato una condizione critica per l'aeroporto: {airport}.
 
+- Origine Dati: {orig}
 - Condizione: {condition}
 - Valore Attuale Voli: {val}
 - Soglia Impostata: {threshold}

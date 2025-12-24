@@ -185,16 +185,20 @@ def fetch_opensky_data(airport):
 
 
 # inviamo dati sia nel loop di monitoraggio e sia dalla Rest API di opensky quando chiediamo i voli interessati
-def send_message_kafka(airport, voli):
+def send_message_kafka(airport, voli,source_type=None):
     # Usiamo la funzione get_producer() che riprova a connettersi se necessario
     current_producer = get_producer()
+
+    if source_type is None:
+        source_type = "Sconosciuto"
 
     if current_producer and voli:
         messaggio_kafka = {
             "airport": airport,
             "timestamp": int(time.time()),
             "flights_count": len(voli),
-            "flights_data": voli
+            "flights_data": voli,
+            "source": source_type
         }
 
         try:
@@ -227,7 +231,7 @@ def monitoraggio_ciclico():
                     print(f"Dati aggiornati per {airport}")
 
                     # manda messaggi a kafka ogni 10 minuti
-                    send_message_kafka(airport, voli)
+                    send_message_kafka(airport, voli,source_type="Monitoraggio ciclico")
 
             # 10 minuti
             time.sleep(600)
@@ -304,7 +308,7 @@ def add_interest():
     mongo_db.salva_voli(airport, voli)
 
     # mando il messaggio a kafka appena ho i voli di interesse
-    send_message_kafka(airport, voli)
+    send_message_kafka(airport, voli,source_type="Richiesta POSTMAN")
 
     return jsonify({"messaggio": f"Interesse aggiunto e dati iniziali recuperati per {airport}",
                     "thresholds": {"high": high_value, "low": low_value}}
