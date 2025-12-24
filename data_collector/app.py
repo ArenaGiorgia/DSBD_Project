@@ -20,7 +20,7 @@ MY_CLIENT_ID = "data_collector_service"
 OPENSKY_CLIENT_ID = os.getenv("OPENSKY_CLIENT_ID")
 OPENSKY_CLIENT_SECRET = os.getenv("OPENSKY_CLIENT_SECRET")
 AUTH_URL = "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token"
-KAFKA_BOOTSTRAP_SERVERS = 'kafka:9092'
+KAFKA_BOOTSTRAP_SERVERS = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'kafka:9092')
 TOPIC_1 = 'to-alert-system'
 
 # Se fallisce 4 volte di fila la chiamata, smette di chiamare OpenSky per 60 secondi.
