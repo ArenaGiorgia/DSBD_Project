@@ -76,12 +76,14 @@ GMAIL_USER= TUA_GMAIL
 GMAIL_PASSWORD= TUA_PASSGMAIL
 ```
 NB. 
+
 **1. Attivare la Verifica in due passaggi (2FA)**
 Per poter usare le "Password per le App", Google richiede che il tuo account sia protetto dalla doppia verifica.
 Vai su Gestisci il tuo Account Google (clicca sulla tua foto in alto a destra su Gmail).
 Vai nella scheda Sicurezza (a sinistra).
 Cerca la sezione "Come accedi a Google".
 Assicurati che "Verifica in due passaggi" sia su ON. (Se è OFF, attivala seguendo le istruzioni col cellulare).
+
 **2. Generare la "Password per le App"**
 Questa è la procedura che genera quel codice GMAIL_PASSWORD.
 Sempre nella scheda Sicurezza, cerca la voce "Password per le app".
