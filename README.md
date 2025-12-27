@@ -122,7 +122,7 @@ Crea un nuovo utente su PostgreSQL.
 * **Body:**
 ```json
 {
-  "email": "mario.rossi@example.com",
+  "email": "tuaemail@gmail.com",
   "password": "passwordSicura123",
   "nome": "Mario",
   "cognome": "Rossi"
@@ -141,7 +141,7 @@ Registra un aeroporto e le soglie di allarme. Innesca una verifica gRPC interna 
 * **Body:**
 ```json
 {
-  "email": "mario.rossi@example.com",
+  "email": "tuaemail@gmail.com",
   "airport": "LIRF",
   "high_value": 100,
   "low_value": 20
