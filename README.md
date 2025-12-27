@@ -63,6 +63,34 @@ Dalla root del progetto, esegui:
 docker-compose up --build -d
 
 ```
+### 2. Settaggio file .env
+All' interno del progetto settare un file .env con le seguenti variabili:
+
+```bash
+OPENSKY_CLIENT_ID= TUO_CLIENTID
+OPENSKY_CLIENT_SECRET= TUO_SECRETCLIENT
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres
+POSTGRES_DB=users_db
+GMAIL_USER= TUA_GMAIL
+GMAIL_PASSWORD= TUA_PASSGMAIL
+```
+NB. 
+**1. Attivare la Verifica in due passaggi (2FA)**
+Per poter usare le "Password per le App", Google richiede che il tuo account sia protetto dalla doppia verifica.
+Vai su Gestisci il tuo Account Google (clicca sulla tua foto in alto a destra su Gmail).
+Vai nella scheda Sicurezza (a sinistra).
+Cerca la sezione "Come accedi a Google".
+Assicurati che "Verifica in due passaggi" sia su ON. (Se è OFF, attivala seguendo le istruzioni col cellulare).
+**2. Generare la "Password per le App"**
+Questa è la procedura che genera quel codice GMAIL_PASSWORD.
+Sempre nella scheda Sicurezza, cerca la voce "Password per le app".
+Nota: A volte Google nasconde questa voce. Se non la trovi, usa la barra di ricerca in alto "Cerca nell'account Google" e scrivi "Password per le app".
+Ti chiederà di ri-inserire la tua password normale per sicurezza.
+Nel menu a tendina "Seleziona app", scegli Posta.
+Nel menu "Seleziona dispositivo", scegli Altro (nome personalizzato) e scrivi un nome a piacere, ad esempio DockerNotifier.
+Clicca su Genera.
+Google ti mostrerà un codice di 16 lettere dentro un riquadro giallo (es. turLV zdyW ...).
 
 ###  Nota Importante sul Bootstrap
 
