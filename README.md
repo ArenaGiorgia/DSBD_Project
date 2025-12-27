@@ -1,5 +1,5 @@
 
-# DS-FlightMonitor: Sistema Distribuito per il Monitoraggio Voli
+# Sistema Distribuito per il Monitoraggio Voli
 
 > **Corso:** Distributed Systems and Big Data (2025-2026)  
 > **Studenti:** Arena Giorgia, Tornabene Alessio  
@@ -7,7 +7,7 @@
 
 ---
 
-## 📋 Panoramica del Progetto
+## Panoramica del Progetto
 
 **Il seguente progetto** è un'architettura a microservizi progettata per il monitoraggio in tempo reale del traffico aereo, integrata con le API di OpenSky Network. Il sistema permette agli utenti di registrare interessi su specifici aeroporti e ricevere notifiche e-mail istantanee (Event-Driven) quando il numero di voli supera soglie personalizzate (`high_value` / `low_value`).
 
@@ -15,28 +15,28 @@ Il progetto non si limita alla funzionalità, ma implementa pattern avanzati di 
 
 ---
 
-## 🚀 Caratteristiche Architetturali (Key Features)
+## Caratteristiche Architetturali (Key Features)
 
-Il sistema è progettato seguendo un approccio **"Best-of-Breed"**, utilizzando tecnologie eterogenee per risolvere problemi specifici:
+Il sistema è progettato utilizzando tecnologie eterogenee per risolvere problemi specifici:
 
-* **🛡️ Robustezza & Fault Tolerance:**
+* **Robustezza & Fault Tolerance:**
     * **Circuit Breaker Custom:** Protegge il sistema dai fallimenti dell'API OpenSky (Logica a stati: *Closed* -> *Open* dopo 4 errori -> *Half-Open* dopo 60s).
     * **Active Waiting:** Gestione intelligente dello startup dei container per risolvere le dipendenze temporali da Kafka.
     * **Graceful Degradation:** Generazione di **Dati Mock** in caso di indisponibilità della rete esterna per garantire la continuità del servizio.
 
-* **⚡ Comunicazione Eterogenea:**
+* **Comunicazione Eterogenea:**
     * **Kafka (Pub/Sub):** Disaccoppiamento asincrono per l'ingestione dati ad alto throughput.
     * **gRPC (Protobuf):** Comunicazione sincrona interna ad alta efficienza tra *Data Collector* e *User Manager*.
     * **REST/HTTP:** Interfaccia pubblica universale gestita tramite **API Gateway (NGINX)**.
 
-* **🔒 Integrità dei Dati:**
+* **Integrità dei Dati:**
     * **Semantica At-Least-Once Stretto:** Configurazione Kafka Producer con `acks='all'` e `flush()` manuale prima del commit.
     * **Deduplica Applicativa:** Implementazione di *Idempotenza* nel Notifier tramite hash MD5 per simulare una semantica *Exactly-Once* ed evitare spam.
     * **Polyglot Persistence:** Uso ibrido di **PostgreSQL** (Dati Relazionali/Utenti - CP) e **MongoDB** (Dati Telemetria/Voli - AP).
 
 ---
 
-## 🛠️ Tech Stack
+##  Tech Stack
 
 * **Linguaggio:** Python 3.9+ (Flask)
 * **Containerizzazione:** Docker & Docker Compose
@@ -47,14 +47,14 @@ Il sistema è progettato seguendo un approccio **"Best-of-Breed"**, utilizzando 
 
 ---
 
-## ⚙️ Prerequisiti
+## Prerequisiti
 
 * **Docker Desktop** installato e attivo.
 * **Postman** (o cURL) per testare le API.
 
 ---
 
-## 🚀 Istruzioni per l'Avvio (Quick Start)
+##  Istruzioni per l'Avvio (Quick Start)
 
 ### 1. Avvio dell'Infrastruttura
 Dalla root del progetto, esegui:
@@ -64,7 +64,7 @@ docker-compose up --build -d
 
 ```
 
-### ⚠️ Nota Importante sul Bootstrap
+###  Nota Importante sul Bootstrap
 
 Immediatamente dopo l'avvio, i servizi Python (`alert_system`, `notifier`) entreranno in uno stato di attesa.
 
@@ -79,8 +79,7 @@ docker-compose logs -f
 
 ---
 
-## 📡 Guida API (Endpoints)
-
+## Guida API 
 Tutte le richieste devono essere inviate alla **Porta 80** (NGINX).
 
 ### 1. Registrazione Utente
@@ -134,7 +133,7 @@ Restituisce l'ultimo dato acquisito (Reale o Mock).
 
 ---
 
-## 🧪 Scenari di Test (End-to-End)
+## Scenari di Test
 
 Per verificare il funzionamento completo della pipeline e la logica di alerting, consigliamo di seguire questi scenari:
 
@@ -168,7 +167,7 @@ Per verificare il funzionamento completo della pipeline e la logica di alerting,
 
 ---
 
-## 📂 Struttura del Repository
+##  Struttura del Repository
 
 * `/user_manager`: Servizio gestione utenti (Flask + Postgres + gRPC Server).
 * `/data_collector`: Servizio ingestione dati (Flask + Mongo + Circuit Breaker + Kafka Producer).
