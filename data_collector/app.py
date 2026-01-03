@@ -13,6 +13,12 @@ from database_mongo import mongo_db
 from circuit_breaker import CircuitBreaker, CircuitBreakerOpenException
 from confluent_kafka import Producer
 
+# --- [PROMETHEUS] IMPORT LIBRERIE MONITORAGGIO ---
+# Queste librerie servono per esporre le metriche richieste dall'HW3
+from prometheus_client import start_http_server, Gauge, Counter
+
+# -------------------------------------------------
+
 app = Flask(__name__)
 
 USER_MANAGER_ADDRESS = os.getenv("USER_MANAGER_GRPC", "localhost:50051")
@@ -22,6 +28,28 @@ OPENSKY_CLIENT_SECRET = os.getenv("OPENSKY_CLIENT_SECRET")
 AUTH_URL = "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token"
 KAFKA_BOOTSTRAP_SERVERS = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'kafka:9092')
 TOPIC_1 = 'to-alert-system'
+
+# --- [PROMETHEUS] CONFIGURAZIONE METRICHE ---
+# Recuperiamo il nome del nodo dalla Downward API di Kubernetes (come richiesto da HW3)
+NODE_NAME = os.getenv("MY_NODE_NAME", "unknown-node")
+SERVICE_NAME = "data-collector"
+
+# 1. Metrica GAUGE: Misura il tempo di risposta dell'API esterna (Latenza)
+# Label: service, node, status (success/error)
+OPENSKY_LATENCY = Gauge(
+    'opensky_response_seconds',
+    'Tempo impiegato per scaricare i dati da OpenSky',
+    ['service', 'node', 'status']
+)
+
+# 2. Metrica COUNTER: Conta le richieste totali (Throughput/Error Rate)
+# Label: service, node, status (success/error/circuit_open)
+OPENSKY_REQUESTS = Counter(
+    'opensky_requests_total',
+    'Numero totale di richieste verso OpenSky API',
+    ['service', 'node', 'status']
+)
+# ---------------------------------------------
 
 # Se fallisce 4 volte di fila la chiamata, smette di chiamare OpenSky per 60 secondi.
 opensky_breaker = CircuitBreaker(failure_threshold=4, recovery_timeout=60,
@@ -36,12 +64,11 @@ producer_config = {
     'linger.ms': 10
 }
 
-
 producer = None
 
-#Se il producer non esiste crealo, chek iniziale.
-def get_producer():
 
+# Se il producer non esiste crealo, chek iniziale.
+def get_producer():
     global producer
     if producer is not None:
         return producer
@@ -50,7 +77,7 @@ def get_producer():
         print("Tentativo connessione Kafka Producer...")
         producer = Producer(producer_config)
 
-        #Proviamo a chiedere la lista dei topic per vedere se è vivo
+        # Proviamo a chiedere la lista dei topic per vedere se è vivo
         producer.list_topics(timeout=2.0)
         print("Kafka Producer inizializzato correttamente!")
         return producer
@@ -59,10 +86,9 @@ def get_producer():
         producer = None
         return None
 
-#lo chiamo subito
+
+# lo chiamo subito
 get_producer()
-
-
 
 
 # server gRPC che diventa il DATA-COLLECTOR in caso di eliminazione degli utenti con interessi
@@ -131,8 +157,6 @@ def delivery_report(err, msg):
 
 def fetch_opensky_data(airport):
     ora_fine = int(time.time())
-    # Cerchiamo nelle ultime 24 ore (7200 modificato a 86400 se vuoi 24h reali, qui ho lasciato il tuo 7200)
-    # Nota: 7200 secondi sono 2 ore. Se vuoi 24 ore metti 86400.
     ora_inizio = ora_fine - 7200
 
     url = "https://opensky-network.org/api/flights/departure"
@@ -144,9 +168,20 @@ def fetch_opensky_data(airport):
     if token:
         headers["Authorization"] = f"Bearer {token}"
 
-    try:
+    # --- [PROMETHEUS] START MISURAZIONE ---
+    start_time = time.time()
+    # --------------------------------------
 
+    try:
+        # Chiamata protetta dal Circuit Breaker
         dati = opensky_breaker.call(circuit_breaker_request, url, params, headers)
+
+        # --- [PROMETHEUS] SUCCESSO ---
+        latency = time.time() - start_time
+        OPENSKY_LATENCY.labels(service=SERVICE_NAME, node=NODE_NAME, status="success").set(latency)
+        OPENSKY_REQUESTS.labels(service=SERVICE_NAME, node=NODE_NAME, status="success").inc()
+        # -----------------------------
+
         if dati:
             return dati
         else:
@@ -154,15 +189,30 @@ def fetch_opensky_data(airport):
             return []  # Ritorna lista vuota se l'API risponde vuoto
 
     except CircuitBreakerOpenException:
+        # --- [PROMETHEUS] CIRCUITO APERTO ---
+        # Misuriamo anche il tempo che ci mette a capire che è chiuso (immediato)
+        OPENSKY_LATENCY.labels(service=SERVICE_NAME, node=NODE_NAME, status="circuit_open").set(
+            time.time() - start_time)
+        OPENSKY_REQUESTS.labels(service=SERVICE_NAME, node=NODE_NAME, status="circuit_open").inc()
+        # ------------------------------------
+
         # Se il circuito è aperto,passiamo direttamente ai dati MOCK
         print(f"Circuito APERTO per {airport}.Richiesta bloccata.")
 
 
     except requests.exceptions.RequestException as e:
+        # --- [PROMETHEUS] ERRORE DI RETE/HTTP ---
+        OPENSKY_LATENCY.labels(service=SERVICE_NAME, node=NODE_NAME, status="error").set(time.time() - start_time)
+        OPENSKY_REQUESTS.labels(service=SERVICE_NAME, node=NODE_NAME, status="error").inc()
+        # ----------------------------------------
+
         print(f"Richiesta fallita: {e}")
 
 
     except Exception as e:
+        # --- [PROMETHEUS] ERRORE GENERICO ---
+        OPENSKY_REQUESTS.labels(service=SERVICE_NAME, node=NODE_NAME, status="exception").inc()
+        # ------------------------------------
         print(f"[OpenSky Generic Error] {e}")
 
     # solo per scopi dimostrativi
@@ -185,7 +235,7 @@ def fetch_opensky_data(airport):
 
 
 # inviamo dati sia nel loop di monitoraggio e sia dalla Rest API di opensky quando chiediamo i voli interessati
-def send_message_kafka(airport, voli,source_type=None):
+def send_message_kafka(airport, voli, source_type=None):
     # Usiamo la funzione get_producer() che riprova a connettersi se necessario
     current_producer = get_producer()
 
@@ -231,7 +281,7 @@ def monitoraggio_ciclico():
                     print(f"Dati aggiornati per {airport}")
 
                     # manda messaggi a kafka ogni 10 minuti
-                    send_message_kafka(airport, voli,source_type="Aggiornamento voli")
+                    send_message_kafka(airport, voli, source_type="Aggiornamento voli")
 
             # 10 minuti
             time.sleep(600)
@@ -308,7 +358,7 @@ def add_interest():
     mongo_db.salva_voli(airport, voli)
 
     # mando il messaggio a kafka appena ho i voli di interesse
-    send_message_kafka(airport, voli,source_type="Richiesta POSTMAN")
+    send_message_kafka(airport, voli, source_type="Richiesta POSTMAN")
 
     return jsonify({"messaggio": f"Interesse aggiunto e dati iniziali recuperati per {airport}",
                     "thresholds": {"high": high_value, "low": low_value}}
@@ -396,6 +446,13 @@ def get_my_interest_flights():
 
 
 if __name__ == '__main__':
+    # --- [PROMETHEUS] START SERVER METRICHE ---
+    # Avviamo il server Prometheus su una porta DIVERSA da Flask (es. 8001)
+    # per separare il traffico applicativo da quello di monitoraggio.
+    print(f"[PROMETHEUS] Avvio export metriche su porta 8001. Nodo: {NODE_NAME}")
+    start_http_server(8001)
+    # ------------------------------------------
+
     bg_thread = threading.Thread(target=monitoraggio_ciclico, daemon=True)
     bg_thread.start()
 

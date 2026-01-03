@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: data-collector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: data-collector
+  template:
+    metadata:
+      labels:
+        app: data-collector
+        # Label necessaria per Prometheus discovery (se usassimo ServiceMonitor)
+        monitoring: "true"
+    spec:
+      containers:
+      - name: data-collector
+        # NOTA: Qui dovrai mettere il nome della TUA immagine docker buildata
+        image: dsbd-data-collector:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 5001 # API Flask
+        - containerPort: 50052 # gRPC
+        - containerPort: 8001 # PROMETHEUS METRICS (Monitoraggio)
+        env:
+        # --- CONFIGURAZIONE DOWNWARD API (IL TOCCO DA 30 E LODE) ---
+        - name: MY_NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        # -----------------------------------------------------------
+        - name: KAFKA_BOOTSTRAP_SERVERS
+          value: "kafka-service:9092" # Nome del service K8s di Kafka
+        - name: USER_MANAGER_GRPC
+          value: "user-manager-service:50051"
+        - name: OPENSKY_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: opensky-id
+        - name: OPENSKY_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: opensky-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: data-collector-service
+spec:
+  selector:
+    app: data-collector
+  ports:
+    - name: http
+      protocol: TCP
+      port: 5001
+      targetPort: 5001
+    - name: grpc
+      protocol: TCP
+      port: 50052
+      targetPort: 50052
+    - name: metrics # Esponiamo la porta metriche al cluster
+      protocol: TCP
+      port: 8001
+      targetPort: 8001
