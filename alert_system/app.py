@@ -5,20 +5,20 @@ import hashlib
 from pymongo import MongoClient, errors
 from confluent_kafka import Consumer, Producer, KafkaError, KafkaException
 
-MONGO_URL = os.getenv("MONGO_URL", "mongodb://data-db:27017/")
-KAFKA_BOOTSTRAP_SERVERS = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'kafka:9092')
-TOPIC_1 = 'to-alert-system' #da consumare l'alert systerm prodotto dal datacollector
-TOPIC_2 = 'to-notifier'     #da produrre l'alert system e consumarlo il notifier
+# --- CONFIGURAZIONE ---
+mongo_host = os.getenv("MONGODB_HOST", "mongodb")
+MONGO_URL = os.getenv("MONGO_URL", f"mongodb://{mongo_host}:27017/")
+KAFKA_BOOTSTRAP_SERVERS = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'kafka-service:9092')
+TOPIC_1 = os.getenv('KAFKA_TOPIC', 'to-alert-system')
+TOPIC_2 = 'to-notifier'
 
-#Variabili globali inizializzate a None per il main
 db = None
 producer = None
 
 
-#Verifico la connessione con il database mongo e voglio che sia attivo
 def init_mongo_connection():
     global db
-    print("Connessione a MongoDB in corso..")
+    print(f"Connessione a MongoDB su {MONGO_URL} in corso..")
     while True:
         try:
             client = MongoClient(MONGO_URL, serverSelectionTimeoutMS=5000)
@@ -29,168 +29,149 @@ def init_mongo_connection():
         except errors.ServerSelectionTimeoutError:
             print("MongoDB non pronto. Riprovo tra 5s..")
             time.sleep(5)
-        except Exception as e:
-            print(f"Errore Mongo: {e}. Riprovo tra 5s..")
-            time.sleep(5)
 
-#aspetto che kafka sia pronto e dopo creo il pub/sub
+
 def wait_for_kafka():
-    print("In attesa di Kafka...")
-
-    #Configurazione temporanea solo per testare la connessione
+    print(f"In attesa di Kafka su {KAFKA_BOOTSTRAP_SERVERS}...")
     configurazione_temp = {'bootstrap.servers': KAFKA_BOOTSTRAP_SERVERS}
     while True:
         try:
-            #Proviamo a chiedere la lista dei topic per vedere se è vivo
             producer_temp = Producer(configurazione_temp)
             producer_temp.list_topics(timeout=5.0)
             print("Kafka è PRONTO! Connessione stabilita")
             return
         except Exception as e:
-            print(f"Kafka non ancora pronto ({e}). Riprovo tra altri 5 secondi..")
+            print(f"Kafka non ancora pronto ({e}). Riprovo tra 5s..")
             time.sleep(5)
+
 
 def delivery_report(err, msg):
     if err:
-        print(f"Errore durante l'invio: {err}")
+        print(f"Errore invio Kafka: {err}")
 
 
-#dato che se il sistema va in crash rilegge i messaggi,generiamo un id univoco al notifier per evitare i duplicati
 def generate_deduplication_id(email, airport, timestamp, value):
-    id = f"{email}-{airport}-{timestamp}-{value}"  #Usa il timestamp originale del pacchetto dati.
-    return hashlib.md5(id.encode()).hexdigest()
+    id_string = f"{email}-{airport}-{timestamp}-{value}"
+    return hashlib.md5(id_string.encode()).hexdigest()
 
 
 def check_thresholds_and_alert(flight_data):
     if db is None or producer is None:
-        print("errore: il database o il Producer non sono inizializzati. Riprova")
+        print("ERRORE CRITICO: DB o Producer non pronti.")
         return
 
     airport = flight_data.get('airport')
     current_count = flight_data.get('flights_count', 0)
+    source_timestamp = flight_data.get('timestamp', int(time.time()))
 
-    #Usiamo il timestamp scritto dal Data Collector.
-    # Se il Data Collector non lo manda, usiamo 0 (o gestiamo l'errore), ma NON time.time().
-    source_timestamp = flight_data.get('timestamp')
-    data_source = flight_data.get('source', 'Sconosciuta')
-
-    if source_timestamp is None:
-        print("errore: Timestamp mancante nei dati di volo!")
-        return
-
-    # Lettura dal database di Mongo
+    # 1. CERCO NEL DATABASE
     try:
-        utenti_interessati = list(db.interests.find({"airport": airport}))
+        # Recupero la lista grezza dal database
+        interessi = list(db.interests.find({"airport": airport}))
+
+        # --- STAMPA DI DEBUG FONDAMENTALE ---
+        print(f"DEBUG DB: Per l'aeroporto '{airport}' ho trovato {len(interessi)} utenti interessati.")
+        if len(interessi) > 0:
+            print(f"DEBUG DATA: Primo record trovato: {interessi[0]}")
+        # ------------------------------------
+
     except Exception as e:
         print(f"Errore lettura Mongo: {e}")
         return
 
     alerts_generated = 0
 
-    for utente in utenti_interessati:
-        email = utente.get('user')
-        high = utente.get('high_value')
-        low = utente.get('low_value')
+    for regola in interessi:
+        # 2. ADATTO LA CHIAVE (Il Data Collector usa 'user', l'Alert System voleva 'email')
+        # Li provo entrambi per sicurezza
+        email = regola.get('user') or regola.get('email')
+
+        if not email:
+            print(f"DEBUG SKIP: Trovato record senza email/user valido: {regola}")
+            continue
+
+        high = regola.get('high_value')
+        low = regola.get('low_value')
 
         condition = None
         triggered_threshold = None
 
-        if high is not None and current_count > high:
+        # 3. CONTROLLO MATEMATICO
+        # Converto in int per sicurezza
+        if high is not None and current_count > int(high):
             condition = "Valore ALTO superato"
             triggered_threshold = high
-        elif low is not None and current_count < low:
+        elif low is not None and current_count < int(low):
             condition = "Valore BASSO superato"
             triggered_threshold = low
 
         if condition:
             alert_id = generate_deduplication_id(email, airport, source_timestamp, current_count)
 
+            # Preparo il messaggio per il Notifier
             alert_message = {
                 "alert_id": alert_id,
                 "email": email,
+                "subject": f"ALERT {airport}: {condition}",
+                "body": f"Allarme per {airport}.\nVoli attuali: {current_count}\nSoglia: {triggered_threshold}",
                 "airport": airport,
                 "condition": condition,
                 "current_value": current_count,
                 "threshold": triggered_threshold,
-                "timestamp": int(time.time()),
-                "source": data_source
+                "timestamp": int(time.time())
             }
 
-            print(f"Allarme rilevato per {email}: {condition}")
+            print(f"!!! ALLARME SCATTATO per {email}: {condition} !!!")
 
-            # Invio al Notifier
-            producer.produce(
-                TOPIC_2,
-                json.dumps(alert_message).encode('utf-8'),
-                callback=delivery_report
-            )
+            producer.produce(TOPIC_2, json.dumps(alert_message).encode('utf-8'), callback=delivery_report)
             alerts_generated += 1
 
-
-    # Se abbiamo generato allarmi, forziamo l'invio fisico
     if alerts_generated > 0:
         producer.flush()
+        print(f"-> Inviati {alerts_generated} messaggi al Notifier.")
+
 
 def main():
     global producer
-
-    #Prima di fare qualsiasi cosa con Kafka o Mongo, aspettiamo che siano pronti.
     init_mongo_connection()
     wait_for_kafka()
 
+    producer_conf = {'bootstrap.servers': KAFKA_BOOTSTRAP_SERVERS, 'acks': 'all', 'linger.ms': 0}
     consumer_conf = {
         'bootstrap.servers': KAFKA_BOOTSTRAP_SERVERS,
         'group.id': 'alert_system_group',
-        'auto.offset.reset': 'earliest',
+        'auto.offset.reset': 'latest',
         'enable.auto.commit': False
-    }
-
-    producer_conf = {
-        'bootstrap.servers': KAFKA_BOOTSTRAP_SERVERS,
-        'acks': 'all',  #Aspetta che tutti i broker (eventualmente replicati) abbiano ottenuto il dato
-        'retries': 5,  # Riprova 5 volte in caso di errore di rete
-        'linger.ms': 0  #riduciamo la latenza e inviamo subito
     }
 
     producer = Producer(producer_conf)
     consumer = Consumer(consumer_conf)
     consumer.subscribe([TOPIC_1])
 
-    print("Alert System OPERATIVO!")
+    print("Alert System OPERATIVO! In attesa di dati...")
 
     try:
         while True:
             msg = consumer.poll(1.0)
-
             if msg is None: continue
-
             if msg.error():
-                if msg.error().code() == KafkaError.UNKNOWN_TOPIC_OR_PART:
-                    time.sleep(2)
-                    continue
-                elif msg.error().code() == KafkaException._PARTITION_EOF:
-                    continue
-                else:
-                    print(f"Consumer error: {msg.error()}")
-                    continue
+                print(f"Kafka Error: {msg.error()}")
+                continue
 
             try:
-
                 data = json.loads(msg.value().decode('utf-8'))
                 print(f"Ricevuto da Kafka: {data.get('airport')} - Voli: {data.get('flights_count')}")
                 check_thresholds_and_alert(data)
-
-                #commit sincrono, kafka deve salvare l offeset se no lo blocchiamo
                 consumer.commit(message=msg, asynchronous=False)
-
             except Exception as e:
-                print(f"Errore di processamento: {e}")
+                print(f"Errore processing: {e}")
 
     except KeyboardInterrupt:
-        print("Stop manuale.")
+        pass
     finally:
         consumer.close()
         producer.flush()
+
 
 if __name__ == "__main__":
     main()

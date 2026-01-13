@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alert-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: alert-system
+  template:
+    metadata:
+      labels:
+        app: alert-system
+    spec:
+      containers:
+      - name: alert-system
+        image: dsbd-alert-system:latest
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: PYTHONUNBUFFERED
+          value: "1"
+
+        # --- MODIFICA FONDAMENTALE QUI SOTTO ---
+        # Invece di MONGODB_HOST, usiamo MONGO_URL che ha la precedenza nel tuo codice
+        - name: MONGO_URL
+          value: "mongodb://mongodb:27017/"
+        # ---------------------------------------
+
+        - name: KAFKA_BOOTSTRAP_SERVERS
+          value: "kafka-service:9092"
+        - name: KAFKA_TOPIC
+          value: "to-alert-system"
+
+        - name: SENDER_EMAIL
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: sender-email
+        - name: SENDER_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: sender-password

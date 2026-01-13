@@ -12,13 +12,10 @@ data:
         static_configs:
           - targets: ['localhost:9090']
 
-      # Job per il Data Collector (Porta 8001)
       - job_name: 'data-collector'
         static_configs:
           - targets: ['data-collector-service:8001']
-        # Questo aggiunge automaticamente la label 'service=data-collector' su Prometheus
 
-      # Job per il Notifier (Porta 8002)
       - job_name: 'notifier'
         static_configs:
           - targets: ['notifier-service:8002']

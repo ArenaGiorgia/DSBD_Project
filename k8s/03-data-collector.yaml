@@ -11,29 +11,35 @@ spec:
     metadata:
       labels:
         app: data-collector
-        # Label necessaria per Prometheus discovery (se usassimo ServiceMonitor)
         monitoring: "true"
     spec:
       containers:
       - name: data-collector
-        # NOTA: Qui dovrai mettere il nome della TUA immagine docker buildata
         image: dsbd-data-collector:latest
         imagePullPolicy: IfNotPresent
         ports:
-        - containerPort: 5001 # API Flask
-        - containerPort: 50052 # gRPC
-        - containerPort: 8001 # PROMETHEUS METRICS (Monitoraggio)
+        - containerPort: 5001
+        - containerPort: 50052
+        - containerPort: 8001
         env:
-        # --- CONFIGURAZIONE DOWNWARD API (IL TOCCO DA 30 E LODE) ---
+        # Downward API
         - name: MY_NODE_NAME
           valueFrom:
             fieldRef:
               fieldPath: spec.nodeName
-        # -----------------------------------------------------------
         - name: KAFKA_BOOTSTRAP_SERVERS
-          value: "kafka-service:9092" # Nome del service K8s di Kafka
+          value: "kafka-service:9092"
+
+        # --- MODIFICA FONDAMENTALE ---
+        # Questa variabile sovrascrive il default "localhost" nel tuo codice Python
+        - name: MONGO_URL
+          value: "mongodb://mongodb:27017/"
+        # -----------------------------
+
         - name: USER_MANAGER_GRPC
           value: "user-manager-service:50051"
+        - name: MONGODB_HOST
+          value: "mongodb"
         - name: OPENSKY_CLIENT_ID
           valueFrom:
             secretKeyRef:
@@ -61,7 +67,7 @@ spec:
       protocol: TCP
       port: 50052
       targetPort: 50052
-    - name: metrics # Esponiamo la porta metriche al cluster
+    - name: metrics
       protocol: TCP
       port: 8001
       targetPort: 8001
