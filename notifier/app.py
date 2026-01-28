@@ -7,30 +7,26 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from collections import deque
 from confluent_kafka import Consumer, KafkaException, KafkaError
-
-# --- [PROMETHEUS] IMPORT LIBRERIE MONITORAGGIO ---
 from prometheus_client import start_http_server, Gauge, Counter
 
-# -------------------------------------------------
 
 KAFKA_BOOTSTRAP_SERVERS = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'kafka:9092')
 TOPIC_1 = 'to-notifier'
 
-# --- [PROMETHEUS] CONFIGURAZIONE METRICHE ---
 # Recuperiamo il nome del nodo dalla Downward API di Kubernetes
-NODE_NAME = os.getenv("MY_NODE_NAME", "unknown-node")
+NODE_NAME = os.getenv("MY_NODE_NAME", "hmw3")
 SERVICE_NAME = "notifier"
 
 # 1. Metrica GAUGE: Latenza invio email (SMTP)
 EMAIL_LATENCY = Gauge(
-    'email_send_seconds',
+    'email_latency',
     'Tempo impiegato per inviare una email via SMTP',
     ['service', 'node', 'status']
 )
 
 # 2. Metrica COUNTER: Contatore email (Successi/Errori)
 EMAIL_COUNT = Counter(
-    'emails_sent_total',
+    'emails_total',
     'Numero totale di email inviate',
     ['service', 'node', 'status']
 )
@@ -70,8 +66,8 @@ def wait_for_kafka():
 def send_email(alert_data):
     # --- [PROMETHEUS] START TIMER ---
     start_time = time.time()
-    status_label = "error"  # Default in caso di eccezione non gestita
-    # --------------------------------
+
+
 
     email = alert_data.get('email')
     airport = alert_data.get('airport')
@@ -134,11 +130,10 @@ Ti auguriamo buone vacanze e un grande in bocca al lupo per l'esame di Distribut
 
 
 def main():
-    # --- [PROMETHEUS] START SERVER ---
     # Usiamo la porta 8002 per non andare in conflitto con nessuno
-    print(f"[PROMETHEUS] Avvio server metriche su porta 8002... Nodo: {NODE_NAME}")
+    print(f"Metriche di Prometheus esposte sulla porta 8002 del Nodo: {NODE_NAME}")
     start_http_server(8002)
-    # ---------------------------------
+
 
     print(f"Notifier Avviato. Mittente: {SENDER_EMAIL}")
 

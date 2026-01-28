@@ -13,11 +13,8 @@ from database_mongo import mongo_db
 from circuit_breaker import CircuitBreaker, CircuitBreakerOpenException
 from confluent_kafka import Producer
 
-# --- [PROMETHEUS] IMPORT LIBRERIE MONITORAGGIO ---
 # Queste librerie servono per esporre le metriche richieste dall'HW3
 from prometheus_client import start_http_server, Gauge, Counter
-
-# -------------------------------------------------
 
 app = Flask(__name__)
 
@@ -29,15 +26,15 @@ AUTH_URL = "https://auth.opensky-network.org/auth/realms/opensky-network/protoco
 KAFKA_BOOTSTRAP_SERVERS = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'kafka:9092')
 TOPIC_1 = 'to-alert-system'
 
-# --- [PROMETHEUS] CONFIGURAZIONE METRICHE ---
-# Recuperiamo il nome del nodo dalla Downward API di Kubernetes (come richiesto da HW3)
-NODE_NAME = os.getenv("MY_NODE_NAME", "unknown-node")
+#Configurazione metriche di prometheus
+# Recuperiamo il nome del nodo dalla Downward API di Kubernetes
+NODE_NAME = os.getenv("MY_NODE_NAME", "hmw3")   #controllare se modificare il nome del nodo di k8s
 SERVICE_NAME = "data-collector"
 
 # 1. Metrica GAUGE: Misura il tempo di risposta dell'API esterna (Latenza)
 # Label: service, node, status (success/error)
 OPENSKY_LATENCY = Gauge(
-    'opensky_response_seconds',
+    'opensky_latency',
     'Tempo impiegato per scaricare i dati da OpenSky',
     ['service', 'node', 'status']
 )
@@ -46,10 +43,10 @@ OPENSKY_LATENCY = Gauge(
 # Label: service, node, status (success/error/circuit_open)
 OPENSKY_REQUESTS = Counter(
     'opensky_requests_total',
-    'Numero totale di richieste verso OpenSky API',
+    'Numero totale di richieste verso OpenSky',
     ['service', 'node', 'status']
 )
-# ---------------------------------------------
+
 
 # Se fallisce 4 volte di fila la chiamata, smette di chiamare OpenSky per 60 secondi.
 opensky_breaker = CircuitBreaker(failure_threshold=4, recovery_timeout=60,
@@ -147,7 +144,6 @@ def circuit_breaker_request(url, params, headers):
     return resp.json()
 
 
-#
 def delivery_report(err, msg):
     if err:
         print(f"Consegna fallita: {err}")
@@ -160,7 +156,7 @@ def fetch_opensky_data(airport):
     ora_inizio = ora_fine - 7200
 
     url = "https://opensky-network.org/api/flights/departure"
-    # url = "https://sito-fake.com/api"  #l ho messo per testare il circuit breaker
+    #url = "https://sito-fake.com/api"  #l ho messo per testare il circuit breaker
 
     params = {'airport': airport, 'begin': ora_inizio, 'end': ora_fine}
     token = get_opensky_token()
@@ -168,9 +164,9 @@ def fetch_opensky_data(airport):
     if token:
         headers["Authorization"] = f"Bearer {token}"
 
-    # --- [PROMETHEUS] START MISURAZIONE ---
+    #[PROMETHEUS] START MISURAZIONE ---
     start_time = time.time()
-    # --------------------------------------
+
 
     try:
         # Chiamata protetta dal Circuit Breaker
@@ -446,12 +442,11 @@ def get_my_interest_flights():
 
 
 if __name__ == '__main__':
-    # --- [PROMETHEUS] START SERVER METRICHE ---
+
     # Avviamo il server Prometheus su una porta DIVERSA da Flask (es. 8001)
-    # per separare il traffico applicativo da quello di monitoraggio.
-    print(f"[PROMETHEUS] Avvio export metriche su porta 8001. Nodo: {NODE_NAME}")
+    print(f"Metriche di Prometheus esposte sulla porta 8001 del Nodo: {NODE_NAME}")
     start_http_server(8001)
-    # ------------------------------------------
+
 
     bg_thread = threading.Thread(target=monitoraggio_ciclico, daemon=True)
     bg_thread.start()

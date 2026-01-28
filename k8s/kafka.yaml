@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka
+  namespace: homework3
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka
+  template:
+    metadata:
+      labels:
+        app: kafka
+    spec:
+      containers:
+        - name: kafka
+          image: confluentinc/cp-kafka:7.4.0
+          ports:
+            - containerPort: 9092
+          #Script di avvio ROBUSTO per Raft
+          command:
+            - "sh"
+            - "-c"
+            - |
+              export CLUSTER_ID=MkU3OEVBNTcwNTJENDM2Qk
+              echo "Controllo e Formattazione Storage KRaft..."
+              kafka-storage format -t $CLUSTER_ID -c /etc/kafka/kafka.properties --ignore-formatted
+              echo "Avvio Kafka..."
+              /etc/confluent/docker/run
+
+          env:
+            #Limita la memoria di Java a 512MB
+            # Questo salva il PC se si esau la RAM.
+            - name: KAFKA_HEAP_OPTS
+              value: "-Xmx512M -Xms512M"
+            # Configurazione Standard KRaft
+            - name: KAFKA_NODE_ID
+              value: "1"
+            - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+              value: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+            - name: KAFKA_ADVERTISED_LISTENERS
+              value: "PLAINTEXT://kafka-service.homework3.svc.cluster.local:9092"
+            - name: KAFKA_LISTENERS
+              value: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093"
+            - name: KAFKA_INTER_BROKER_LISTENER_NAME
+              value: "PLAINTEXT"
+            - name: KAFKA_CONTROLLER_LISTENER_NAMES
+              value: "CONTROLLER"
+            - name: KAFKA_CONTROLLER_QUORUM_VOTERS
+              value: "1@localhost:9093"
+            - name: KAFKA_PROCESS_ROLES
+              value: "broker,controller"
+            - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS
+              value: "0"
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-service
+  namespace: homework3
+spec:
+  ports:
+    - port: 9092
+      name: internal
+      targetPort: 9092
+  selector:
+    app: kafka
+  clusterIP: None

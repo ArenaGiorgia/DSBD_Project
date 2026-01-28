@@ -1,0 +1,55 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dsbd-ingress
+  namespace: homework3
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/use-regex: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          #andiamo al data-collector-service con la porta 5001
+          - path: /interests
+            pathType: Prefix
+            backend:
+              service:
+                name: data-collector-service
+                port:
+                  number: 5001
+
+          - path: /flights
+            pathType: Prefix
+            backend:
+              service:
+                name: data-collector-service
+                port:
+                  number: 5001
+
+          - path: /statistics
+            pathType: Prefix
+            backend:
+              service:
+                name: data-collector-service
+                port:
+                  number: 5001
+
+          #andiamo allo user-manager-service alla porta 5000
+          - path: /users
+            pathType: Prefix
+            backend:
+              service:
+                name: user-manager-service
+                port:
+                  number: 5000
+
+          #andiamo al prometheus-service alla porta 9090
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: prometheus-service
+                port:
+                  number: 9090

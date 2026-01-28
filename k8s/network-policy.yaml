@@ -1,0 +1,64 @@
+#Mi serve per proteggere i database dal traffico in entrata
+# Se non c'è una regola esplicita che permette il traffico, blocca tutto
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: db-protection-policy
+  namespace: homework3
+spec:
+  podSelector:
+    matchExpressions:
+      # Selezioniamo i pod con le etichette dei database (user-db e mongo)
+      - {key: app, operator: In, values: [user-db, mongo]}
+  policyTypes:
+    - Ingress # Controlliamo il traffico in ENTRATA
+
+---
+#policy per postgres
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: protect-postgres
+  namespace: homework3
+spec:
+  # Applica questa regola solo al pod user-db
+  podSelector:
+    matchLabels:
+      app: user-db
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: user-manager
+      ports:
+        - protocol: TCP
+          port: 5432
+
+---
+#policy per mongo
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: protect-mongo
+  namespace: homework3
+spec:
+  # Applica questa regola Slo al pod mongo
+  podSelector:
+    matchLabels:
+      app: mongo
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: data-collector
+
+        - podSelector:
+            matchLabels:
+              app: alert-system
+      ports:
+        - protocol: TCP
+          port: 27017

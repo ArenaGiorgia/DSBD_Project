@@ -5,11 +5,10 @@ import hashlib
 from pymongo import MongoClient, errors
 from confluent_kafka import Consumer, Producer, KafkaError, KafkaException
 
-# --- CONFIGURAZIONE ---
 mongo_host = os.getenv("MONGODB_HOST", "mongodb")
 MONGO_URL = os.getenv("MONGO_URL", f"mongodb://{mongo_host}:27017/")
 KAFKA_BOOTSTRAP_SERVERS = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'kafka-service:9092')
-TOPIC_1 = os.getenv('KAFKA_TOPIC', 'to-alert-system')
+TOPIC_1 = 'to-alert-system'
 TOPIC_2 = 'to-notifier'
 
 db = None
@@ -69,11 +68,6 @@ def check_thresholds_and_alert(flight_data):
         # Recupero la lista grezza dal database
         interessi = list(db.interests.find({"airport": airport}))
 
-        # --- STAMPA DI DEBUG FONDAMENTALE ---
-        print(f"DEBUG DB: Per l'aeroporto '{airport}' ho trovato {len(interessi)} utenti interessati.")
-        if len(interessi) > 0:
-            print(f"DEBUG DATA: Primo record trovato: {interessi[0]}")
-        # ------------------------------------
 
     except Exception as e:
         print(f"Errore lettura Mongo: {e}")
@@ -121,14 +115,13 @@ def check_thresholds_and_alert(flight_data):
                 "timestamp": int(time.time())
             }
 
-            print(f"!!! ALLARME SCATTATO per {email}: {condition} !!!")
+            print(f"ALLARME SCATTATO per {email}: {condition}!")
 
             producer.produce(TOPIC_2, json.dumps(alert_message).encode('utf-8'), callback=delivery_report)
             alerts_generated += 1
 
     if alerts_generated > 0:
         producer.flush()
-        print(f"-> Inviati {alerts_generated} messaggi al Notifier.")
 
 
 def main():

@@ -1,0 +1,28 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+
+networking:
+  apiServerAddress: "127.0.0.1"
+  apiServerPort: 6443
+
+nodes:
+  #utilizziamo un solo nodo control plane
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+
+    #Mappiamo le porte necessarie per l nxnix-controller
+    extraPortMappings:
+      - containerPort: 80
+        hostPort: 80
+        protocol: TCP
+      - containerPort: 443
+        hostPort: 443
+        protocol: TCP
+      - containerPort: 30090
+        hostPort: 9090
+        protocol: TCP
