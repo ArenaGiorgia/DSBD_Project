@@ -13,26 +13,25 @@ from prometheus_client import start_http_server, Gauge, Counter
 KAFKA_BOOTSTRAP_SERVERS = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'kafka:9092')
 TOPIC_1 = 'to-notifier'
 
-# Recuperiamo il nome del nodo dalla Downward API di Kubernetes
+#Recuperiamo il nome del nodo dalla Downward API di Kubernetes
 NODE_NAME = os.getenv("MY_NODE_NAME", "hmw3")
 SERVICE_NAME = "notifier"
 
-# 1. Metrica GAUGE: Latenza invio email (SMTP)
+#Latenza invio email (SMTP)
 EMAIL_LATENCY = Gauge(
     'email_latency',
     'Tempo impiegato per inviare una email via SMTP',
     ['service', 'node', 'status']
 )
 
-# 2. Metrica COUNTER: Contatore email (Successi/Errori)
+#Contatore email
 EMAIL_COUNT = Counter(
     'emails_total',
     'Numero totale di email inviate',
     ['service', 'node', 'status']
 )
-# ---------------------------------------------
 
-# configurazione SMTP
+#configurazione SMTP
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 465
 SENDER_EMAIL = os.getenv('SENDER_EMAIL')
@@ -64,10 +63,8 @@ def wait_for_kafka():
 
 
 def send_email(alert_data):
-    # --- [PROMETHEUS] START TIMER ---
+
     start_time = time.time()
-
-
 
     email = alert_data.get('email')
     airport = alert_data.get('airport')
@@ -109,22 +106,20 @@ Ti auguriamo buone vacanze e un grande in bocca al lupo per l'esame di Distribut
 
         print(f"Invio con successo a {email}")
 
-        # --- [PROMETHEUS] SUCCESS ---
         latency = time.time() - start_time
         EMAIL_LATENCY.labels(service=SERVICE_NAME, node=NODE_NAME, status="success").set(latency)
         EMAIL_COUNT.labels(service=SERVICE_NAME, node=NODE_NAME, status="success").inc()
-        # ----------------------------
         return True
 
     except smtplib.SMTPAuthenticationError:
         print("Password o Email sbagliata", file=sys.stderr)
-        # --- [PROMETHEUS] AUTH ERROR ---
+
         EMAIL_COUNT.labels(service=SERVICE_NAME, node=NODE_NAME, status="auth_error").inc()
         return False
 
     except Exception as e:
         print(f"Errore invio: {e}", file=sys.stderr)
-        # --- [PROMETHEUS] GENERIC ERROR ---
+
         EMAIL_COUNT.labels(service=SERVICE_NAME, node=NODE_NAME, status="send_error").inc()
         return False
 
@@ -163,7 +158,7 @@ def main():
                     continue
                 else:
                     print(f"Kafka errore: {msg.error()}", file=sys.stderr)
-                    # --- [PROMETHEUS] KAFKA ERROR ---
+
                     EMAIL_COUNT.labels(service=SERVICE_NAME, node=NODE_NAME, status="kafka_error").inc()
                     continue
 

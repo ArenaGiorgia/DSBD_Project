@@ -12,8 +12,6 @@ from concurrent import futures
 from database_mongo import mongo_db
 from circuit_breaker import CircuitBreaker, CircuitBreakerOpenException
 from confluent_kafka import Producer
-
-# Queste librerie servono per esporre le metriche richieste dall'HW3
 from prometheus_client import start_http_server, Gauge, Counter
 
 app = Flask(__name__)
@@ -26,27 +24,38 @@ AUTH_URL = "https://auth.opensky-network.org/auth/realms/opensky-network/protoco
 KAFKA_BOOTSTRAP_SERVERS = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'kafka:9092')
 TOPIC_1 = 'to-alert-system'
 
-#Configurazione metriche di prometheus
-# Recuperiamo il nome del nodo dalla Downward API di Kubernetes
-NODE_NAME = os.getenv("MY_NODE_NAME", "hmw3")   #controllare se modificare il nome del nodo di k8s
+
+#Recuperiamo il nome del nodo dalla Downward API di Kubernetes
+NODE_NAME = os.getenv("MY_NODE_NAME", "hmw3")
 SERVICE_NAME = "data-collector"
 
-# 1. Metrica GAUGE: Misura il tempo di risposta dell'API esterna (Latenza)
-# Label: service, node, status (success/error)
+#misura il tempo di risposta dell'API opensky ovvero la latenza
 OPENSKY_LATENCY = Gauge(
     'opensky_latency',
     'Tempo impiegato per scaricare i dati da OpenSky',
     ['service', 'node', 'status']
 )
 
-# 2. Metrica COUNTER: Conta le richieste totali (Throughput/Error Rate)
-# Label: service, node, status (success/error/circuit_open)
+#misura le richieste totali
 OPENSKY_REQUESTS = Counter(
     'opensky_requests_total',
     'Numero totale di richieste verso OpenSky',
     ['service', 'node', 'status']
 )
 
+#latenza dell' ultima query Mongo
+MONGO_LAST_QUERY_DURATION = Gauge(
+    'mongo_last_query',
+    'Durata ultima query eseguita su Mongo',
+    ['query_type', 'collection']
+)
+
+#tempo totale speso su Mongo
+MONGO_TOTAL_QUERY_TIME = Counter(
+    'mongo_total_query',
+    'Tempo totale speso ad aspettare MongoDB',
+    ['query_type', 'collection']
+)
 
 # Se fallisce 4 volte di fila la chiamata, smette di chiamare OpenSky per 60 secondi.
 opensky_breaker = CircuitBreaker(failure_threshold=4, recovery_timeout=60,
@@ -94,7 +103,13 @@ class DataCollectorGRPC(user_pb2_grpc.DataCollectorServicer):
         email = request.email
         print(f"Richiesta cancellazione dati per: {email}")
 
+        #metriche per il delete
+        start_db = time.time()
         count = mongo_db.rimuovi_interessi_utente(email)
+        duration = time.time() - start_db
+        MONGO_LAST_QUERY_DURATION.labels('DELETE', 'interessi').set(duration)
+        MONGO_TOTAL_QUERY_TIME.labels('DELETE', 'interessi').inc(duration)
+
 
         return user_pb2.DeleteDataResponse(success=True)
 
@@ -164,51 +179,48 @@ def fetch_opensky_data(airport):
     if token:
         headers["Authorization"] = f"Bearer {token}"
 
-    #[PROMETHEUS] START MISURAZIONE ---
     start_time = time.time()
-
 
     try:
         # Chiamata protetta dal Circuit Breaker
         dati = opensky_breaker.call(circuit_breaker_request, url, params, headers)
 
-        # --- [PROMETHEUS] SUCCESSO ---
+        #misuriamo richieste e la latenza se va a buon fine
         latency = time.time() - start_time
         OPENSKY_LATENCY.labels(service=SERVICE_NAME, node=NODE_NAME, status="success").set(latency)
         OPENSKY_REQUESTS.labels(service=SERVICE_NAME, node=NODE_NAME, status="success").inc()
-        # -----------------------------
+
 
         if dati:
             return dati
         else:
             print(f"Nessun volo trovato per {airport} (Lista vuota da API).")
-            return []  # Ritorna lista vuota se l'API risponde vuoto
+            return []  #Ritorna una lista vuota se l'API risponde vuoto
 
     except CircuitBreakerOpenException:
-        # --- [PROMETHEUS] CIRCUITO APERTO ---
-        # Misuriamo anche il tempo che ci mette a capire che è chiuso (immediato)
+
+        # Misuriamo il tempo che ci mette a capire che è chiuso il circuito
         OPENSKY_LATENCY.labels(service=SERVICE_NAME, node=NODE_NAME, status="circuit_open").set(
             time.time() - start_time)
         OPENSKY_REQUESTS.labels(service=SERVICE_NAME, node=NODE_NAME, status="circuit_open").inc()
-        # ------------------------------------
+
 
         # Se il circuito è aperto,passiamo direttamente ai dati MOCK
         print(f"Circuito APERTO per {airport}.Richiesta bloccata.")
 
 
     except requests.exceptions.RequestException as e:
-        # --- [PROMETHEUS] ERRORE DI RETE/HTTP ---
+        #metriche errore delle request
         OPENSKY_LATENCY.labels(service=SERVICE_NAME, node=NODE_NAME, status="error").set(time.time() - start_time)
         OPENSKY_REQUESTS.labels(service=SERVICE_NAME, node=NODE_NAME, status="error").inc()
-        # ----------------------------------------
+
 
         print(f"Richiesta fallita: {e}")
 
 
     except Exception as e:
-        # --- [PROMETHEUS] ERRORE GENERICO ---
+
         OPENSKY_REQUESTS.labels(service=SERVICE_NAME, node=NODE_NAME, status="exception").inc()
-        # ------------------------------------
         print(f"[OpenSky Generic Error] {e}")
 
     # solo per scopi dimostrativi
@@ -268,12 +280,27 @@ def monitoraggio_ciclico():
     print("Avvio Thread Monitoraggio Ciclico...")
     while True:
         try:
+            #metrica per misurare le letture in mongo
+            start_db = time.time()
             aeroporti = mongo_db.get_tutti_aeroporti_monitorati()
+            duration = time.time() - start_db
+            MONGO_LAST_QUERY_DURATION.labels('FIND', 'monitoraggio').set(duration)
+            MONGO_TOTAL_QUERY_TIME.labels('FIND', 'monitoraggio').inc(duration)
+
+
             if aeroporti:
                 print(f"Aggiornamento per: {aeroporti}")
                 for airport in aeroporti:
                     voli = fetch_opensky_data(airport)
+
+                    #metricha per misurare le scritture in mongo
+                    start_db = time.time()
                     mongo_db.salva_voli(airport, voli)
+                    duration = time.time() - start_db
+                    MONGO_LAST_QUERY_DURATION.labels('UPDATE', 'voli').set(duration)
+                    MONGO_TOTAL_QUERY_TIME.labels('UPDATE', 'voli').inc(duration)
+
+
                     print(f"Dati aggiornati per {airport}")
 
                     # manda messaggi a kafka ogni 10 minuti
@@ -347,11 +374,24 @@ def add_interest():
 
         return jsonify({"errore": f"Errore comunicazione gRPC: {e.details()}"}), 500
 
+    #metrica insert in mongo
+    start_db = time.time()
     mongo_db.aggiungi_interesse(email, airport, high_value, low_value)
+    duration = time.time() - start_db
+    MONGO_LAST_QUERY_DURATION.labels('INSERT', 'interessi').set(duration)
+    MONGO_TOTAL_QUERY_TIME.labels('INSERT', 'interessi').inc(duration)
+
 
     print(f"Download immediato dati per {airport}...")
     voli = fetch_opensky_data(airport)
+
+    #metrica per le modifiche
+    start_db = time.time()
     mongo_db.salva_voli(airport, voli)
+    duration = time.time() - start_db
+    MONGO_LAST_QUERY_DURATION.labels('UPDATE', 'voli').set(duration)
+    MONGO_TOTAL_QUERY_TIME.labels('UPDATE', 'voli').inc(duration)
+
 
     # mando il messaggio a kafka appena ho i voli di interesse
     send_message_kafka(airport, voli, source_type="Richiesta POSTMAN")
@@ -368,7 +408,13 @@ def remove_interests():
     if not email:
         return jsonify({"errore": "Email mancante"}), 400
 
+    #metrica del delete in mongo
+    start_db = time.time()
     count = mongo_db.rimuovi_interessi_utente(email)
+    duration = time.time() - start_db
+    MONGO_LAST_QUERY_DURATION.labels('DELETE', 'interessi').set(duration)
+    MONGO_TOTAL_QUERY_TIME.labels('DELETE', 'interessi').inc(duration)
+
 
     return jsonify({"messaggio": f"Rimossi {count} interessi per {email}"}), 200
 
@@ -378,7 +424,14 @@ def get_last_flight():
     airport = request.args.get('airport')
     if not airport: return jsonify({"errore": "Airport mancante"}), 400
 
+    #metrica se trova i voli da mongo
+    start_db = time.time()
     volo = mongo_db.get_ultimo_volo(airport)
+    duration = time.time() - start_db
+    MONGO_LAST_QUERY_DURATION.labels('FIND', 'voli').set(duration)
+    MONGO_TOTAL_QUERY_TIME.labels('FIND', 'voli').inc(duration)
+
+
     if volo:
         if '_id' in volo: del volo['_id']
 
@@ -404,7 +457,13 @@ def get_average_flights():
     except ValueError:
         return jsonify({"errore": "Days deve essere un numero"}), 400
 
+    #metrica per la media
+    start_db = time.time()
     media = mongo_db.get_media_voli(airport, days)
+    duration = time.time() - start_db
+    MONGO_LAST_QUERY_DURATION.labels('AGGREGATE', 'voli').set(duration)
+    MONGO_TOTAL_QUERY_TIME.labels('AGGREGATE', 'voli').inc(duration)
+
 
     response_data = {
         "airport": airport,
@@ -426,7 +485,13 @@ def get_my_interest_flights():
     if not email:
         return jsonify({"errore": "Parametro email obbligatorio"}), 400
 
+
+    start_db = time.time()
     voli = mongo_db.get_voli_di_interesse_utente(email)
+    duration = time.time() - start_db
+    MONGO_LAST_QUERY_DURATION.labels('FIND', 'voli_utente').set(duration)
+    MONGO_TOTAL_QUERY_TIME.labels('FIND', 'voli_utente').inc(duration)
+
 
     response_data = {
         "user": email,
@@ -443,10 +508,9 @@ def get_my_interest_flights():
 
 if __name__ == '__main__':
 
-    # Avviamo il server Prometheus su una porta DIVERSA da Flask (es. 8001)
+    #Avviamo il server Prometheus su una porta dIVERSA da Flask ovvero alla 8001
     print(f"Metriche di Prometheus esposte sulla porta 8001 del Nodo: {NODE_NAME}")
     start_http_server(8001)
-
 
     bg_thread = threading.Thread(target=monitoraggio_ciclico, daemon=True)
     bg_thread.start()

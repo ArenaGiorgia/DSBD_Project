@@ -15,24 +15,35 @@ from prometheus_client import start_http_server, Counter, Gauge
 global_cache = Cache(ttl_seconds=300)
 app = Flask(__name__)
 
-# --- CONFIGURAZIONE METRICHE HOMEWORK (AGGIUNTE) ---
 NODE_NAME = os.getenv("MY_NODE_NAME", "hmw3")
 SERVICE_NAME = "user-manager"
 
-# 1. Metrica COUNTER (Numero totale di richieste)
+#metrica di tipo counter che misura il numero totale di richieste
 REQUEST_COUNT = Counter(
     'user_manager_requests_total',
     'Totale richieste ricevute dal servizio User Manager',
     ['service', 'node', 'method', 'endpoint', 'http_status']
 )
 
-# 2. Metrica GAUGE (Tempo di risposta dell'ultima richiesta)
+#metrica di tipo gauge che misura il tempo di risposta dell'ultima richiesta
 LAST_REQUEST_LATENCY = Gauge(
     'user_manager_latency',
     'Tempo di esecuzione dell\'ultima richiesta in secondi',
     ['service', 'node', 'method', 'endpoint']
 )
+#metrica che misura il tempo totale che abbiamo perso per accedere al DB
+DB_TOTAL_QUERY_TIME = Counter(
+    'time_total_db_query_seconds',
+    'Tempo totale speso ad aspettare il database',
+    ['query_type', 'table']
+)
 
+#metrica che misura quanto tempo ci ha messo l'ultima query
+DB_LAST_QUERY_DURATION = Gauge(
+    'last_db_query_seconds',
+    'Durata ultima query eseguita sul database',
+    ['query_type', 'table']
+)
 
 DATA_COLLECTOR_GRPC = "data-collector:50052"
 
@@ -63,7 +74,13 @@ class UserManagerGRPC(user_pb2_grpc.UserManagerServicer):
             cursore = connection.cursor()
 
             try:
+                start_db = time.time()
                 cursore.execute("SELECT * FROM users WHERE email = %s", (email,))
+                duration = time.time() - start_db
+
+                #aggiorno le metriche ogni volta che viene fatta una richiesta al db
+                DB_LAST_QUERY_DURATION.labels('SELECT', 'users').set(duration)
+                DB_TOTAL_QUERY_TIME.labels('SELECT', 'users').inc(duration)
 
                 if cursore.fetchone():
                     exists = True
@@ -97,23 +114,24 @@ def start_grpc_server():
 
 @app.route('/users', methods=['POST'])
 def register():
-    # --- PROMETHEUS START TIMER ---
+
+    #prometheus inizia a contare il tempo
     start_time = time.time()
 
     # Recupero l'ID univoco dalla richiesta(Header)
     request_id = request.headers.get('Request-ID')
 
     if not request_id:
-        # Metrica Errore 400
+        # Metrica per l' errore 400
         REQUEST_COUNT.labels(SERVICE_NAME, NODE_NAME, 'POST', '/users', 400).inc()
         return jsonify({"errore": "Manca l'header Request-ID per l' At-Most-Once"}), 400
 
-    # utilizzo il DATA_COLLECTOR come client per identificare quel microservizio
+    # utilizzo il data_collector come client per identificare quel microservizio
     cache_resp = global_cache.get_response("DATA_COLLECTOR", request_id)
     if cache_resp:
         print(f"Mi hai mandato gia la stessa request, ti prendo il dato conservato nella mia cache.")
 
-        # Metrica Cache Hit (Status originale)
+        #metrica per le richieste nella cache
         REQUEST_COUNT.labels(SERVICE_NAME, NODE_NAME, 'POST', '/users', cache_resp['status']).inc()
         return jsonify(cache_resp['body']), cache_resp['status']
 
@@ -124,7 +142,7 @@ def register():
     cognome = data.get('cognome')
 
     if not email or not password:
-        # Metrica Errore 400
+        #metrica per gli errori 400
         REQUEST_COUNT.labels(SERVICE_NAME, NODE_NAME, 'POST', '/users', 400).inc()
         return jsonify({"errore": "Email obbligatoria / password obbligatoria"}), 400
 
@@ -134,11 +152,18 @@ def register():
         cursor = connection.cursor()
 
         try:
+            #metrica per contare le select
+            start_db = time.time()
             cursor.execute("SELECT * FROM users WHERE email = %s", (email,))
+            duration = time.time() - start_db
+            DB_LAST_QUERY_DURATION.labels('SELECT', 'users').set(duration)
+            DB_TOTAL_QUERY_TIME.labels('SELECT', 'users').inc(duration)
+
+
             if cursor.fetchone():
                 print(f"Utente con {email} e con ID {request_id} gia registrato / Vai in un eventuale login")
 
-                # --- PROMETHEUS SUCCESS (User Exists) ---
+
                 REQUEST_COUNT.labels(SERVICE_NAME, NODE_NAME, 'POST', '/users', 200).inc()
                 LAST_REQUEST_LATENCY.labels(SERVICE_NAME, NODE_NAME, 'POST', '/users').set(time.time() - start_time)
 
@@ -149,12 +174,19 @@ def register():
                 }), 200
 
             pw_hash = hashlib.sha256(password.encode()).hexdigest()
+            start_db = time.time()
 
             # Inserisco l'utente
             cursor.execute(
                 "INSERT INTO users (email, password, nome, cognome) VALUES (%s, %s, %s, %s)",
                 (email, pw_hash, nome, cognome)
             )
+
+            #metriche per contare gli insert
+            duration = time.time() - start_db
+            DB_LAST_QUERY_DURATION.labels('INSERT', 'users').set(duration)
+            DB_TOTAL_QUERY_TIME.labels('INSERT', 'users').inc(duration)
+
 
             connection.commit()
             print(f"Registrazione completata per l'utente con request_id: {request_id} ed email: {email}")
@@ -169,7 +201,7 @@ def register():
             # Salvo in cache per futuri retry con lo stesso ID
             global_cache.save_response("DATA_COLLECTOR", request_id, {'body': response_body, 'status': status_code})
 
-            # --- PROMETHEUS SUCCESS (Created) ---
+            #metriche sempre per vedere lo stato 201
             REQUEST_COUNT.labels(SERVICE_NAME, NODE_NAME, 'POST', '/users', 201).inc()
             LAST_REQUEST_LATENCY.labels(SERVICE_NAME, NODE_NAME, 'POST', '/users').set(time.time() - start_time)
 
@@ -180,7 +212,7 @@ def register():
             cursor.close()
 
     except Exception as e:
-        # Metrica Errore 500
+        # Metrica per l'errore 500
         REQUEST_COUNT.labels(SERVICE_NAME, NODE_NAME, 'POST', '/users', 500).inc()
         return jsonify({"errore": f"Errore server: {str(e)}"}), 500
 
@@ -191,7 +223,7 @@ def register():
 
 @app.route('/users', methods=['DELETE'])
 def delete_user():
-    # --- PROMETHEUS START TIMER ---
+
     start_time = time.time()
 
     # Recupero l'ID per gestire la pulizia della cache
@@ -201,7 +233,8 @@ def delete_user():
     password = data.get('password')
 
     if not email or not password:
-        # Metrica Errore 400
+
+        # Metrica per l errore 400
         REQUEST_COUNT.labels(SERVICE_NAME, NODE_NAME, 'DELETE', '/users', 400).inc()
         abort(400, description="Email e Password obbligatori per cancellare")
 
@@ -212,8 +245,14 @@ def delete_user():
         conn = database_postgres.get_connection()
         cur = conn.cursor()
         try:
+            start_db = time.time()
             # cancello da POSTGRES
             cur.execute("DELETE FROM users WHERE email = %s AND password = %s", (email, pw_hash))
+
+            #metriche per il delete nel database
+            duration = time.time() - start_db
+            DB_LAST_QUERY_DURATION.labels('DELETE', 'users').set(duration)
+            DB_TOTAL_QUERY_TIME.labels('DELETE', 'users').inc(duration)
             conn.commit()
 
             if cur.rowcount > 0:
@@ -266,7 +305,7 @@ def delete_user():
                 except Exception as e:
                     print(f"Errore generico pulizia dei dati: {e}")
 
-                # --- PROMETHEUS SUCCESS (Deleted) ---
+
                 REQUEST_COUNT.labels(SERVICE_NAME, NODE_NAME, 'DELETE', '/users', 200).inc()
                 LAST_REQUEST_LATENCY.labels(SERVICE_NAME, NODE_NAME, 'DELETE', '/users').set(time.time() - start_time)
 
@@ -275,7 +314,7 @@ def delete_user():
 
                 print(f"Utente {email} non trovato nel DB o password errata.")
 
-                # Metrica Errore 401
+                # Metrica per l errore 401
                 REQUEST_COUNT.labels(SERVICE_NAME, NODE_NAME, 'DELETE', '/users', 401).inc()
                 return jsonify({"errore": "Utente non trovato o credenziali errate"}), 401
 
@@ -285,7 +324,6 @@ def delete_user():
     except Exception as e:
         # Gestione errori generici del server
         print(f"[SERVER ERROR] {str(e)}")
-        # Metrica Errore 500
         REQUEST_COUNT.labels(SERVICE_NAME, NODE_NAME, 'DELETE', '/users', 500).inc()
         return jsonify({"errore": f"Errore interno del server: {str(e)}"}), 500
     finally:
@@ -293,8 +331,8 @@ def delete_user():
 
 
 if __name__ == '__main__':
-    # --- AVVIO SERVER METRICHE PROMETHEUS (AGGIUNTO) ---
-    # Fondamentale: apre la porta 8000 per rispondere a Prometheus
+
+    #apre la porta 8000 per rispondere a Prometheus
     start_http_server(8000)
     print("Server metriche Prometheus avviato su porta 8000")
     threading_grpc = threading.Thread(target=start_grpc_server, daemon=True)
