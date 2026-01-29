@@ -1,9 +1,31 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-service
+  namespace: homework3
+  labels:
+    app: kafka
+spec:
+  ports:
+    - port: 9092
+      name: internal
+      targetPort: 9092
+    - port: 9093
+      name: controller
+      targetPort: 9093
+  selector:
+    app: kafka
+  clusterIP: None  #Headless service essendo uno statefull
+
+---
+
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: kafka
   namespace: homework3
 spec:
+  serviceName: "kafka-service"
   replicas: 1
   selector:
     matchLabels:
@@ -16,25 +38,40 @@ spec:
       containers:
         - name: kafka
           image: confluentinc/cp-kafka:7.4.0
+
+          #ottimizzo le risorse
+          resources:
+            requests:
+              memory: "256Mi"   #minimo per partire
+              cpu: "100m"       # Bassa priorità
+            limits:
+              memory: "600Mi"   # massima memoria
+              cpu: "1000m"      #massimo 1 core
+
           ports:
             - containerPort: 9092
-          #Script di avvio ROBUSTO per Raft
+            - containerPort: 9093
+
+          # Script di avvio Raft
           command:
             - "sh"
             - "-c"
             - |
               export CLUSTER_ID=MkU3OEVBNTcwNTJENDM2Qk
-              echo "Controllo e Formattazione Storage KRaft..."
-              kafka-storage format -t $CLUSTER_ID -c /etc/kafka/kafka.properties --ignore-formatted
-              echo "Avvio Kafka..."
+              # Formatta solo se il disco è nuovo
+              if [ ! -f /var/lib/kafka/data/meta.properties ]; then
+                echo "Storage vuoto: Formattazione KRaft..."
+                kafka-storage format -t $CLUSTER_ID -c /etc/kafka/kafka.properties --ignore-formatted
+              else
+                echo "Dati trovati: Avvio normale."
+              fi
               /etc/confluent/docker/run
 
           env:
-            #Limita la memoria di Java a 512MB
-            # Questo salva il PC se si esau la RAM.
+
+            # Lascia 300MB liberi nel container per il sistema operativo
             - name: KAFKA_HEAP_OPTS
-              value: "-Xmx512M -Xms512M"
-            # Configurazione Standard KRaft
+              value: "-Xmx300M -Xms300M"
             - name: KAFKA_NODE_ID
               value: "1"
             - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
@@ -48,7 +85,7 @@ spec:
             - name: KAFKA_CONTROLLER_LISTENER_NAMES
               value: "CONTROLLER"
             - name: KAFKA_CONTROLLER_QUORUM_VOTERS
-              value: "1@localhost:9093"
+              value: "1@kafka-0.kafka-service.homework3.svc.cluster.local:9093"
             - name: KAFKA_PROCESS_ROLES
               value: "broker,controller"
             - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
@@ -59,19 +96,35 @@ spec:
               value: "1"
             - name: KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS
               value: "0"
+            - name: KAFKA_LOG_DIRS
+              value: "/var/lib/kafka/data"
 
----
+          #Per evitare riavvii se il PC è lento
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "nc -z localhost 9092"]
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 10
+            failureThreshold: 10
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "nc -z localhost 9092"]
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 10
+            failureThreshold: 10
 
-apiVersion: v1
-kind: Service
-metadata:
-  name: kafka-service
-  namespace: homework3
-spec:
-  ports:
-    - port: 9092
-      name: internal
-      targetPort: 9092
-  selector:
-    app: kafka
-  clusterIP: None
+          volumeMounts:
+            - name: kafka-data
+              mountPath: /var/lib/kafka/data
+
+  #persistenza dei dati con 250 Mb invece di 1 giga
+  volumeClaimTemplates:
+  - metadata:
+      name: kafka-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 250Mi

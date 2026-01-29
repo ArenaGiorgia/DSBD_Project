@@ -68,7 +68,7 @@ data:
           target_label: kubernetes_pod_name
 
 ---
-#StatefulSet (Aggiornato con ServiceAccount)
+
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -85,26 +85,55 @@ spec:
       labels:
         app: prometheus-server
     spec:
-      serviceAccountName: prometheus  # <--- QUESTA È LA CHIAVE!
+      serviceAccountName: prometheus
       containers:
         - name: prometheus
           image: prom/prometheus:v2.44.0
+
+          #ottimizzo le risorse
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "1000m"
+
           args:
             - "--config.file=/etc/prometheus/prometheus.yml"
             - "--storage.tsdb.path=/prometheus/"
-            - "--storage.tsdb.retention.time=15d"
+            - "--storage.tsdb.retention.time=1d"   #Tengo solo 1 giorno di dati per non riempire i 250MB
+
           ports:
             - containerPort: 9090
+
+          #Rilassa (60s) per dare tempo al PC di caricare
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: 9090
+            initialDelaySeconds: 60
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: 9090
+            initialDelaySeconds: 60
+            periodSeconds: 20
+
           volumeMounts:
             - name: prometheus-config-volume
               mountPath: /etc/prometheus/
             - name: prometheus-storage
               mountPath: /prometheus/
+
       volumes:
         - name: prometheus-config-volume
           configMap:
             defaultMode: 420
             name: prometheus-server-conf
+
+  #storage ridotto
   volumeClaimTemplates:
     - metadata:
         name: prometheus-storage
@@ -112,7 +141,7 @@ spec:
         accessModes: ["ReadWriteOnce"]
         resources:
           requests:
-            storage: 1Gi
+            storage: 250Mi
 
 ---
 

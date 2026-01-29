@@ -22,13 +22,21 @@ spec:
           image: user-manager:v1
           imagePullPolicy: Never
 
+          #ottimizzo le risorse per il mio PC
+          resources:
+            requests:
+              memory: "80Mi"
+              cpu: "50m"
+            limits:
+              memory: "250Mi"
+              cpu: "500m"
+
           ports:
             - containerPort: 50051 #gRPC
             - containerPort: 8000  #metriche per Prometheus
             - containerPort: 5000  #Flask
 
           env:
-            #variabili del file di ambiente
             - name: PYTHONUNBUFFERED
               value: "1"
             - name: POSTGRES_HOST
@@ -66,7 +74,7 @@ spec:
 
 ---
 
-#deployment del data-collector
+#Deployment del data-collector
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -90,17 +98,25 @@ spec:
           image: data-collector:v1
           imagePullPolicy: Never
 
+
+          resources:
+            requests:
+              memory: "80Mi"   #do un po piu di RAM per i file JSON
+              cpu: "50m"
+            limits:
+              memory: "250Mi"
+              cpu: "500m"
+
           ports:
             - containerPort: 5001
             - containerPort: 50052
             - containerPort: 8001
 
           env:
-            #variabili di ambiente
             - name: PYTHONUNBUFFERED
               value: "1"
             - name: KAFKA_BOOTSTRAP_SERVERS
-              value: "kafka-service.homework3.svc.cluster.local:9092"
+              value: "kafka-0.kafka-service.homework3.svc.cluster.local:9092"
             - name: MONGO_URL
               value: "mongodb://mongo-service.homework3.svc.cluster.local:27017/"
             - name: USER_MANAGER_GRPC
@@ -134,7 +150,7 @@ spec:
 
 ---
 
-#deployment del notifier
+#Deployment del notifier
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -158,15 +174,23 @@ spec:
           image: notifier:v1
           imagePullPolicy: Never
 
+
+          resources:
+            requests:
+              memory: "60Mi"
+              cpu: "50m"
+            limits:
+              memory: "180Mi"
+              cpu: "400m"
+
           ports:
             - containerPort: 8002
 
           env:
-            #variabili di ambiente
             - name: PYTHONUNBUFFERED
               value: "1"
             - name: KAFKA_BOOTSTRAP_SERVERS
-              value: "kafka-service.homework3.svc.cluster.local:9092"
+              value: "kafka-0.kafka-service.homework3.svc.cluster.local:9092"
             - name: SENDER_EMAIL
               valueFrom: {secretKeyRef: {name: app-secrets, key: GMAIL_USER}}
             - name: SENDER_PASSWORD
@@ -190,7 +214,7 @@ spec:
 
 ---
 
-#deploymente dell alert-system
+#Deployment dell'alert-system
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -211,11 +235,20 @@ spec:
           image: alert-system:v1
           imagePullPolicy: Never
 
+
+          resources:
+            requests:
+              memory: "60Mi"
+              cpu: "50m"
+            limits:
+              memory: "180Mi"
+              cpu: "400m"
+
           env:
             - name: PYTHONUNBUFFERED
               value: "1"
             - name: KAFKA_BOOTSTRAP_SERVERS
-              value: "kafka-service.homework3.svc.cluster.local:9092"
+              value: "kafka-0.kafka-service.homework3.svc.cluster.local:9092"
             - name: MONGO_URL
               value: "mongodb://mongo-service.homework3.svc.cluster.local:27017/"
             - name: MY_NODE_NAME

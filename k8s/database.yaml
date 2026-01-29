@@ -18,6 +18,28 @@ spec:
       containers:
         - name: postgres
           image: postgres:15-alpine
+
+          #ottimizzo le mie risorse con 8Ggia di RAM
+          resources:
+            requests:
+              memory: "150Mi"   #minimo garantito per partire
+              cpu: "100m"       #bassa priorità CPU
+            limits:
+              memory: "300Mi"   #limito massimo per il mio PC
+              cpu: "500m"       #massimo mezzo core
+
+          #aspettiamo 60s prima di controllare essendo un pc lento
+          livenessProbe:
+            tcpSocket:
+              port: 5432
+            initialDelaySeconds: 60
+            periodSeconds: 20
+          readinessProbe:
+            tcpSocket:
+              port: 5432
+            initialDelaySeconds: 60
+            periodSeconds: 20
+
           ports:
             - containerPort: 5432
 
@@ -41,7 +63,7 @@ spec:
         accessModes: ["ReadWriteOnce"]
         resources:
           requests:
-            storage: 1Gi
+            storage: 250Mi  #Ridotto per risparmiare disco e I/O
 
 ---
 apiVersion: v1
@@ -78,6 +100,28 @@ spec:
       containers:
         - name: mongo
           image: mongo:6.0
+
+
+          resources:
+            requests:
+              memory: "150Mi"
+              cpu: "100m"
+            limits:
+              memory: "300Mi"
+              cpu: "500m"
+
+
+          livenessProbe:
+            tcpSocket:
+              port: 27017
+            initialDelaySeconds: 60
+            periodSeconds: 20
+          readinessProbe:
+            tcpSocket:
+              port: 27017
+            initialDelaySeconds: 60
+            periodSeconds: 20
+
           ports:
             - containerPort: 27017
 
@@ -92,7 +136,7 @@ spec:
         accessModes: ["ReadWriteOnce"]
         resources:
           requests:
-            storage: 1Gi
+            storage: 250Mi
 
 ---
 apiVersion: v1
