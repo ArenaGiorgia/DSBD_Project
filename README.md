@@ -1,14 +1,12 @@
-# Cloud-Native Flight Monitoring System (Kubernetes Edition)
+# Sistema Distribuito per il Monitoraggio Voli- Hw3
 
 > **Corso:** Distributed Systems and Big Data (2025-2026)
-> 
 > **Studenti:** Arena Giorgia, Tornabene Alessio
-> 
 > **Università degli Studi di Catania**
 
 ---
 
-## ☁️ Panoramica del Progetto (HW3)
+## Panoramica del Progetto (HW3)
 
 **Il progetto evolve l'architettura a microservizi** precedente trasformandola in un sistema **Cloud-Native** pienamente orchestrato su **Kubernetes**.
 Il sistema monitora il traffico aereo in tempo reale (OpenSky API) e notifica gli utenti via email al superamento di soglie critiche.
@@ -21,7 +19,7 @@ A differenza della versione basata su Docker Compose, questa iterazione si focal
 
 ---
 
-## 🏗️ Caratteristiche Architetturali (Key Features)
+##  Caratteristiche Architetturali (Key Features)
 
 ### 1. Architettura Kubernetes Avanzata
 * **Stateful vs Stateless:**
