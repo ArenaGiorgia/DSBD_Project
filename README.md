@@ -1,4 +1,4 @@
-# ✈️ Sistema Distribuito di Monitoraggio Voli (DSBD Project #1)
+#  Sistema Distribuito di Monitoraggio Voli (DSBD Project #1)
 
 **Corso:** Sistemi Distribuiti e Big Data (2025/2026)
 
@@ -12,11 +12,11 @@
 
 ---
 
-## 📋 Descrizione del Progetto
+##  Descrizione del Progetto
 
 Il sistema è un'applicazione distribuita che integra dati provenienti da **OpenSky Network** per tracciare voli aerei di interesse per gli utenti registrati. L'architettura è basata su **Microservizi** containerizzati, garantendo scalabilità, isolamento e una gestione efficiente dei dati eterogenei (Polyglot Persistence).
 
-### ✨ Funzionalità Chiave
+###  Funzionalità Chiave
 * **Gestione Utenti:** Registrazione sicura con politica *"At-Most-Once"*.
 * **Monitoraggio Voli:** Download ciclico dei dati di volo in background senza bloccare le API REST.
 * **Analisi Statistica:** Calcolo in tempo reale di medie e ultimi avvistamenti su MongoDB.
@@ -24,7 +24,7 @@ Il sistema è un'applicazione distribuita che integra dati provenienti da **Open
 
 ---
 
-## 🏗️ Architettura del Sistema
+## Architettura del Sistema
 
 Il progetto è composto da 4 container orchestrati via Docker Compose:
 
@@ -42,7 +42,7 @@ Il progetto è composto da 4 container orchestrati via Docker Compose:
 
 ---
 
-## 🚀 Guida all'Installazione e Deploy (Docker)
+##  Guida all'Installazione e Deploy (Docker)
 
 Questo è il metodo consigliato per avviare l'intero sistema in pochi secondi.
 
@@ -85,7 +85,7 @@ docker-compose down -v
 
 -----
 
-## 🔧 Sviluppo Locale (Senza Docker)
+##  Sviluppo Locale (Senza Docker)
 
 Se si desidera eseguire o testare i singoli script Python (es. test unitari o debugging) al di fuori dei container Docker, è necessario configurare un ambiente virtuale locale e installare le dipendenze dai file `requirements.txt`.
 
@@ -125,18 +125,18 @@ pip install -r data_collector/requirements.txt
 
 -----
 
-## 🔌 API Reference
+##  API Reference
 
 Il sistema espone le seguenti API su `localhost`.
 
-### 🟢 User Manager (Porta 5000)
+### User Manager (Porta 5000)
 
 | Metodo | Endpoint | Body (JSON) | Descrizione |
 | :--- | :--- | :--- | :--- |
 | `POST` | `/users` | `{"email": "...", "nome": "..."}` | Registra un nuovo utente. |
 | `DELETE` | `/users/<email>` | - | Cancella un utente e i suoi dati a cascata. |
 
-### 🔵 Data Collector (Porta 5001)
+###  Data Collector (Porta 5001)
 
 | Metodo | Endpoint | Body / Query | Descrizione |
 | :--- | :--- | :--- | :--- |
@@ -147,7 +147,7 @@ Il sistema espone le seguenti API su `localhost`.
 
 -----
 
-### 👥 Autori
+###  Autori
 
 Arena Giorgia
 
