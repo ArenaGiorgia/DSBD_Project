@@ -4,7 +4,7 @@
 > 
 > **Corso:** Distributed Systems and Big Data (2025-2026)
 > **Studenti:** Arena Giorgia, Tornabene Alessio
-> **Università:** Università degli Studi di Catania 
+> **Università:** Università degli Studi di Catania  
 > 
 > 
 
@@ -17,9 +17,9 @@ Questo progetto rappresenta l'evoluzione **Cloud-Native** del sistema di monitor
 Il sistema non si limita a gestire microservizi, ma implementa pattern avanzati di ingegneria distribuita:
 
  
-**Orchestrazione Dichiarativa:** Separazione netta tra carichi *Stateless* (Deployments) e *Stateful* (StatefulSets).
-**Osservabilità White-Box:** Monitoraggio attivo tramite **Prometheus** con strumentazione diretta del codice Python .
-**Persistenza Resiliente:** Utilizzo di **PVC (Persistent Volume Claims)** per garantire *Zero Data Loss* anche in caso di crash dei Pod.
+* **Orchestrazione Dichiarativa:** Separazione netta tra carichi *Stateless* (Deployments) e *Stateful* (StatefulSets).
+* **Osservabilità White-Box:** Monitoraggio attivo tramite **Prometheus** con strumentazione diretta del codice Python .
+* **Persistenza Resiliente:** Utilizzo di **PVC (Persistent Volume Claims)** per garantire *Zero Data Loss* anche in caso di crash dei Pod.
 
 
 
