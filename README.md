@@ -16,15 +16,9 @@ Questo progetto rappresenta l'evoluzione **Cloud-Native** del sistema di monitor
 
 Il sistema non si limita a gestire microservizi, ma implementa pattern avanzati di ingegneria distribuita:
 
-* 
+ 
 **Orchestrazione Dichiarativa:** Separazione netta tra carichi *Stateless* (Deployments) e *Stateful* (StatefulSets).
-
-
-* 
 **Osservabilità White-Box:** Monitoraggio attivo tramite **Prometheus** con strumentazione diretta del codice Python .
-
-
-* 
 **Persistenza Resiliente:** Utilizzo di **PVC (Persistent Volume Claims)** per garantire *Zero Data Loss* anche in caso di crash dei Pod.
 
 
@@ -39,13 +33,9 @@ Il cluster è configurato in modalità **Single-Node Hybrid** (Control Plane + W
 
 ### 2. Gestione Avanzata dello Stato
 
-* 
+
 **StatefulSets (Kafka, Mongo, Postgres):** Garantiscono identità di rete stabile (es. `kafka-0`) e ordine di avvio sequenziale, fondamentali per il cluster di messaggistica e i database .
-
-
-* 
 **Deployments (App Logic):** I microservizi (`user-manager`, `notifier`, ecc.) sono trattati come entità effimere ("Cattle"), scalabili orizzontalmente senza perdita di stato .
-
 
 
 ### 3. Ottimizzazione Storage Kafka
@@ -56,27 +46,11 @@ Per evitare la saturazione del disco in un ambiente vincolato, Kafka è configur
 
 ## Tech Stack
 
-* 
 **Orchestrator:** Kubernetes (v1.27+) su Kind.
-
-
-* 
 **Monitoring:** Prometheus (Pull-based Model, Service Discovery).
-
-
-* 
 **Broker:** Apache Kafka (StatefulSet).
-
-
-* 
 **Database:** PostgreSQL (Relazionale), MongoDB (NoSQL).
-
-
-* 
 **Networking:** NGINX Ingress Controller.
-
-
-* 
 **Linguaggio:** Python 3.9+ (Flask, gRPC, Prometheus Client).
 
 
