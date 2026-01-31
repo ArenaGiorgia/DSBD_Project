@@ -1,7 +1,9 @@
 # Sistema Distribuito per il Monitoraggio Voli- Hw3
 
 > **Corso:** Distributed Systems and Big Data (2025-2026)
+> 
 > **Studenti:** Arena Giorgia, Tornabene Alessio
+> 
 > **Università degli Studi di Catania**
 
 ---
